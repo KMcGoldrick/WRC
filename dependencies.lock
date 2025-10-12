@@ -1,0 +1,35 @@
+dependencies:
+  espressif/led_strip:
+    component_hash: 223998f10cae6d81f2ad2dd3c1103c2221be298c708e37917482b0153f3ec64e
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 3.0.1~1
+  espressif/usb_host_cdc_acm:
+    component_hash: 29ab411dcacf824f4f7aa4256a60801cdcc2ecd6afecd9c829219f493e9972f9
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    version: 1.0.4
+  idf:
+    source:
+      type: idf
+    version: 5.5.1
+direct_dependencies:
+- espressif/led_strip
+- espressif/usb_host_cdc_acm
+- idf
+manifest_hash: 9dcd245e3c5f172abbfcaa3cc2d2c5e327dc35270aa30d03fbe6d58ae6007a13
+target: esp32s3
+version: 2.0.0
