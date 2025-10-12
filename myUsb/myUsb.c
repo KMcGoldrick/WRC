@@ -55,6 +55,7 @@ static void enumerate_usb_devices(void)
         uint8_t addr = addr_list[i];
         usb_device_handle_t dev_hdl;
         const usb_device_desc_t* dev_desc;
+        const usb_config_desc_t* config_desc;
 
         err = usb_host_device_open(client_hdl, addr, &dev_hdl);
         if (err != ESP_OK) {
@@ -62,20 +63,71 @@ static void enumerate_usb_devices(void)
             continue;
         }
 
+        // --- DEVICE DESCRIPTOR ---
         err = usb_host_get_device_descriptor(dev_hdl, &dev_desc);
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "Device Addr %d: VID=0x%04X, PID=0x%04X, bcdUSB=0x%04X",
-                addr, dev_desc->idVendor, dev_desc->idProduct, dev_desc->bcdUSB);
+            ESP_LOGI(TAG, "\n[DEVICE %d]", addr);
+            ESP_LOGI(TAG, "  VID=0x%04X, PID=0x%04X, bcdUSB=0x%04X",
+                dev_desc->idVendor, dev_desc->idProduct, dev_desc->bcdUSB);
+            ESP_LOGI(TAG, "  Class=0x%02X, SubClass=0x%02X, Protocol=0x%02X",
+                dev_desc->bDeviceClass, dev_desc->bDeviceSubClass, dev_desc->bDeviceProtocol);
         }
         else {
-            ESP_LOGE(TAG, "Failed to read device descriptor for addr %d", addr);
+            ESP_LOGE(TAG, "  Failed to read device descriptor for addr %d", addr);
+        }
+
+        // --- CONFIGURATION DESCRIPTOR ---
+        err = usb_host_get_active_config_descriptor(dev_hdl, &config_desc);
+        if (err == ESP_OK && config_desc) {
+            ESP_LOGI(TAG, "  bNumInterfaces = %d", config_desc->bNumInterfaces);
+
+            int offset = config_desc->bLength; // start after config header
+            const usb_standard_desc_t* desc = NULL;
+
+            while ((desc = usb_parse_next_descriptor(
+                (const usb_standard_desc_t*)config_desc,
+                config_desc->wTotalLength,
+                &offset)) != NULL)
+            {
+                switch (desc->bDescriptorType)
+                {
+                case USB_B_DESCRIPTOR_TYPE_INTERFACE: {
+                    const usb_intf_desc_t* intf = (const usb_intf_desc_t*)desc;
+                    ESP_LOGI(TAG,
+                        "  [Interface %d] Class=0x%02X, SubClass=0x%02X, Protocol=0x%02X, NumEP=%d",
+                        intf->bInterfaceNumber,
+                        intf->bInterfaceClass,
+                        intf->bInterfaceSubClass,
+                        intf->bInterfaceProtocol,
+                        intf->bNumEndpoints);
+                    break;
+                }
+
+                case USB_B_DESCRIPTOR_TYPE_ENDPOINT: {
+                    const usb_ep_desc_t* ep = (const usb_ep_desc_t*)desc;
+                    ESP_LOGI(TAG,
+                        "    Endpoint Addr=0x%02X, Attr=0x%02X, MaxPkt=%d, Interval=%d",
+                        ep->bEndpointAddress,
+                        ep->bmAttributes,
+                        ep->wMaxPacketSize,
+                        ep->bInterval);
+                    break;
+                }
+
+                default:
+                    break;
+                }
+            }
+        }
+        else {
+            ESP_LOGE(TAG, "  Failed to get config descriptor for addr %d: %s",
+                addr, esp_err_to_name(err));
         }
 
         usb_host_device_close(client_hdl, dev_hdl);
     }
 }
 
-// ────────────────────────────────────────────────
 // USB event handler task
 // ────────────────────────────────────────────────
 static void usb_event_handler_task(void* arg)
