@@ -81,7 +81,7 @@ static void enumerate_usb_devices(void)
         if (err == ESP_OK && config_desc) {
             ESP_LOGI(TAG, "  bNumInterfaces = %d", config_desc->bNumInterfaces);
 
-            int offset = config_desc->bLength; // start after config header
+            int offset = config_desc->bLength; // start after config descriptor
             const usb_standard_desc_t* desc = NULL;
 
             while ((desc = usb_parse_next_descriptor(
@@ -89,33 +89,30 @@ static void enumerate_usb_devices(void)
                 config_desc->wTotalLength,
                 &offset)) != NULL)
             {
-                switch (desc->bDescriptorType)
-                {
-                case USB_B_DESCRIPTOR_TYPE_INTERFACE: {
+                if (desc->bDescriptorType == USB_B_DESCRIPTOR_TYPE_INTERFACE) {
                     const usb_intf_desc_t* intf = (const usb_intf_desc_t*)desc;
-                    ESP_LOGI(TAG,
-                        "  [Interface %d] Class=0x%02X, SubClass=0x%02X, Protocol=0x%02X, NumEP=%d",
-                        intf->bInterfaceNumber,
-                        intf->bInterfaceClass,
-                        intf->bInterfaceSubClass,
-                        intf->bInterfaceProtocol,
-                        intf->bNumEndpoints);
-                    break;
-                }
 
-                case USB_B_DESCRIPTOR_TYPE_ENDPOINT: {
+                    // Only print first alternate setting for each logical interface
+                    if (intf->bAlternateSetting == 0) {
+                        ESP_LOGI(TAG,
+                            "  [Interface %d] Class=0x%02X, SubClass=0x%02X, Protocol=0x%02X, NumEP=%d",
+                            intf->bInterfaceNumber,
+                            intf->bInterfaceClass,
+                            intf->bInterfaceSubClass,
+                            intf->bInterfaceProtocol,
+                            intf->bNumEndpoints);
+                    }
+                }
+                else if (desc->bDescriptorType == USB_B_DESCRIPTOR_TYPE_ENDPOINT) {
                     const usb_ep_desc_t* ep = (const usb_ep_desc_t*)desc;
+                    // Only log endpoints if the previous interface's bAlternateSetting == 0
+                    // (assumes interfaces and their endpoints appear sequentially)
                     ESP_LOGI(TAG,
                         "    Endpoint Addr=0x%02X, Attr=0x%02X, MaxPkt=%d, Interval=%d",
                         ep->bEndpointAddress,
                         ep->bmAttributes,
                         ep->wMaxPacketSize,
                         ep->bInterval);
-                    break;
-                }
-
-                default:
-                    break;
                 }
             }
         }
