@@ -20,17 +20,26 @@
 #define TCM_PID 0x08AE
 
 bool tcm_connected = false;
+char buff[128];
+
+// Handle to TCM device
+static usb_device_handle_t TCMdev_hdl = NULL;
+// Configuration descriptor of TCM device
+static usb_config_desc_t* TCMconfig_desc = NULL;
+// Descriptor of TCM device
+static const usb_device_desc_t* TCMdev_desc = NULL;
 
 // Handle to CDC-ACM device driver
 static cdc_acm_dev_hdl_t cdc_hdl = NULL;
-// Handle to TCM device
-static usb_device_handle_t TCMdev_hdl = NULL;
-// Descriptor of TCM device
-static const usb_device_desc_t* TCMdev_desc = NULL;
-// Configuration descriptor of TCM device
-static usb_config_desc_t* TCMconfig_desc = NULL;
 // Connection handle to USB Host library
 static usb_host_client_handle_t client_hdl = NULL;
+
+static void handle_rx(uint8_t* data, size_t data_len, void* user_arg)
+{
+    ESP_LOGI(TAG, "Data received");
+    ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_len, ESP_LOG_INFO);
+    // If you need to process data, do it here.
+}
 
 // CDC-ACM configuration
 static const cdc_acm_host_device_config_t dev_config = {
@@ -38,7 +47,7 @@ static const cdc_acm_host_device_config_t dev_config = {
     .out_buffer_size = 512,
     .user_arg = NULL,
     .event_cb = NULL,
-    .data_cb = NULL
+    .data_cb = handle_rx
 };
 
 static bool enumerate_TCM_device(void)
@@ -166,76 +175,30 @@ static void usb_event_handler_task(void* arg)
     }
 }
 
-static void openTCMcdc(void)
-{
-    esp_err_t err = cdc_acm_host_open(TCM_VID, TCM_PID, 0, &dev_config, &cdc_hdl);
-
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "TCM device opened successfully!");
-    }
-    else {
-        ESP_LOGE(TAG, "Failed to open TCM: %s", esp_err_to_name(err));
-    }
-}
-
-static esp_err_t send_STP_command(void)
+static esp_err_t send_command(const char* cmd)
 {
     if (cdc_hdl == NULL) {
         ESP_LOGE(TAG, "CDC handle not initialized");
         return ESP_FAIL;
     }
 
-    const char* cmd = "STP\r";
     size_t len = strlen(cmd);
-    size_t bytes_written = 0;
-
     esp_err_t err = cdc_acm_host_data_tx_blocking(cdc_hdl, (const uint8_t*)cmd, len, 1000);
-    if (err == ESP_OK && bytes_written == len) {
-        ESP_LOGI(TAG, "Sent STP command successfully");
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to send command: %s", esp_err_to_name(err));
+        return err;
     }
-    else {
-        ESP_LOGE(TAG, "Failed to send STP command: %s (wrote %d/%d bytes)",
-            esp_err_to_name(err), (int)bytes_written, (int)len);
-    }
+	ESP_LOGI(TAG, "Sent command: %s", cmd);
 
     return err;
 }
 
-static esp_err_t send_STP_raw(usb_device_handle_t dev_hdl, uint8_t ep_addr_out)
-{
-    if (dev_hdl == NULL) return ESP_ERR_INVALID_STATE;
-
-    const char* cmd = "STP\r";
-    size_t len = strlen(cmd);
-
-    usb_transfer_t* transfer;
-    esp_err_t err = usb_host_transfer_alloc(len, 0, &transfer);
-    if (err != ESP_OK) return err;
-
-    transfer->device_handle = dev_hdl;
-    transfer->bEndpointAddress = ep_addr_out;
-    transfer->num_bytes = len;
-    memcpy(transfer->data_buffer, cmd, len);
-    transfer->callback = NULL;
-    transfer->context = NULL;
-
-    err = usb_host_transfer_submit(transfer);
-    if (err == ESP_OK)
-        ESP_LOGI(TAG, "STP command sent successfully to TCM");
-    else
-        ESP_LOGE(TAG, "Failed to send STP: %s", esp_err_to_name(err));
-
-    usb_host_transfer_free(transfer);
-    return err;
-}
-
-bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
+static bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
     const usb_device_desc_t* dev_desc,
     const usb_config_desc_t* config_desc)
 {
 	bool success = false;
     esp_err_t err;
-    cdc_acm_dev_hdl_t tcm_handle;
 
     if (client_hdl == NULL) {
         ESP_LOGE("USB", "Client handle is NULL");
@@ -274,11 +237,11 @@ bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
                     dev_desc->idProduct,
                     intf->bInterfaceNumber,
                     &dev_config,
-                    &tcm_handle);
+                    &cdc_hdl);
 
                 if (err == ESP_OK) {
                     ESP_LOGI("USB", "Opened CDC interface successfully");
-					success = true;
+                    success = true;
                 }
                 else {
                     ESP_LOGE("USB", "Failed to open CDC interface: %s", esp_err_to_name(err));
@@ -330,7 +293,15 @@ static void usb_client_task(void* arg)
             }
         }
         else {
-			ESP_LOGI(TAG, "TCM already connected");
+			ESP_LOGI(TAG, "TCM connected");
+            send_command("STP\r");
+			vTaskDelay(pdMS_TO_TICKS(500));
+            send_command("GFV\r");
+			vTaskDelay(pdMS_TO_TICKS(500));
+            send_command("GSN\r");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            send_command("GSR\r");
+            vTaskDelay(pdMS_TO_TICKS(500));
         }
 
         vTaskDelay(pdMS_TO_TICKS(2000));
