@@ -108,7 +108,7 @@ void app_main(void)
         runLED();
         //runTcm();
 
-        ESP_LOGI("WRC", "Looping... %d", ++loopCounter);
+        //ESP_LOGI("WRC", "Looping... %d", ++loopCounter);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
