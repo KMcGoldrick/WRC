@@ -19,8 +19,42 @@
 #define TCM_VID 0x2047
 #define TCM_PID 0x08AE
 
+// Lowell Instruments TCM Commands
+#define FIRMWARE_VERSION_CMD   "GFV"
+#define CALIBRATION_CMD        "RHS"
+#define INTERVAL_TIME_CMD      "GIT"
+#define LOGGER_INFO_CMD        "RLI"
+#define LOGGER_SETTINGS_CMD    "GLS"
+#define PAGE_COUNT_CMD         "GPC"
+#define RESET_CMD              "RST"
+#define RUN_CMD                "RUN"
+#define SD_CAPACITY_CMD        "CTS"
+#define SD_FILE_SIZE_CMD       "FSZ"
+#define SD_FREE_SPACE_CMD      "CFS"
+#define SENSOR_READINGS_CMD    "GSR"
+#define SERIAL_NUMBER_CMD      "GSN"
+#define START_TIME_CMD         "GST"
+#define STATUS_CMD             "STS"
+#define STOP_CMD               "STP"
+#define SWS_CMD                "SWS"
+#define RWS_CMD                "RWS"
+#define SET_TIME_CMD           "STM"
+#define TIME_CMD               "GTM"
+#define DEL_FILE_CMD           "DEL"
+#define LOGGER_INFO_CMD_W      "WLI"
+#define LOGGER_HSA_CMD_W       "WHS"
+#define REQ_FILE_NAME_CMD      "RFN"
+#define DIR_CMD                "DIR"
+
+
+// Array of commands
 bool tcm_connected = false;
 char buff[128];
+char version[16] = { 0 };
+char serial[32] = { 0 };
+char readings[64] = { 0 };
+bool got_sensor_readings = false;
+
 
 // Handle to TCM device
 static usb_device_handle_t TCMdev_hdl = NULL;
@@ -34,13 +68,76 @@ static cdc_acm_dev_hdl_t cdc_hdl = NULL;
 // Connection handle to USB Host library
 static usb_host_client_handle_t client_hdl = NULL;
 
+static void parse_response(const uint8_t* data, size_t data_len) {
+    // Firmware version
+    const char* fw_start = strstr((const char*)data, FIRMWARE_VERSION_CMD);
+    if (fw_start) {
+        fw_start = strchr(fw_start, ' ');
+        if (fw_start) {
+            fw_start +=3; // Point to version string
+            const char* fw_end = strchr(fw_start, '\r');
+            if (fw_end) {
+                size_t len = fw_end - fw_start;
+                if (len < sizeof(version)) {
+                    strncpy(version, fw_start, len);
+                    version[len] = '\0';
+                    ESP_LOGI(TAG, "Firmware version: %s", version);
+                }
+            }
+        }
+    }
+
+    // Serial number
+    const char* sn_start = strstr((const char*)data, SERIAL_NUMBER_CMD);
+    if (sn_start) {
+        sn_start = strchr(sn_start, ' ');
+        if (sn_start) {
+            sn_start +=3; // Point to serial number string
+            const char* sn_end = strchr(sn_start, '\r');
+            if (sn_end) {
+                size_t len = sn_end - sn_start;
+                if (len < sizeof(serial)) {
+                    strncpy(serial, sn_start, len);
+                    serial[len] = '\0';
+                    ESP_LOGI(TAG, "Serial number: %s", serial);
+                }
+            }
+        }
+    }
+
+    // Sensor readings
+    const char* sr_start = strstr((const char*)data, SENSOR_READINGS_CMD);
+    if (sr_start) {
+        sr_start = strchr(sr_start, ' ');
+        if (sr_start) {
+            sr_start +=3; // Point to sensor readings string
+            const char* sr_end = strchr(sr_start, '\r');
+            if (sr_end) {
+                char readings[64] = { 0 };
+                size_t len = sr_end - sr_start;
+                if (len < sizeof(readings)) {
+                    strncpy(readings, sr_start, len);
+                    readings[len] = '\0';
+                    ESP_LOGI(TAG, "Sensor readings: %s", readings);
+					got_sensor_readings = true;
+                }
+            }
+        }
+    }
+}
+
 static void handle_rx(uint8_t* data, size_t data_len, void* user_arg)
 {
+    // Only log if the received data is not "ERR 00"
+    if (data_len == 8 && memcmp(data, "ERR 00..", 6) == 0) {
+        // Ignore "ERR 00.." responses
+        return;
+    }
     ESP_LOGI(TAG, "Data received");
     ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_len, ESP_LOG_INFO);
     // If you need to process data, do it here.
+	parse_response(data, data_len);
 }
-
 // CDC-ACM configuration
 static const cdc_acm_host_device_config_t dev_config = {
     .connection_timeout_ms = 2000,
@@ -182,9 +279,10 @@ static esp_err_t send_command(const char* cmd)
         return ESP_FAIL;
     }
 
-    size_t len = strlen(cmd);
-    esp_err_t err = cdc_acm_host_data_tx_blocking(cdc_hdl, (const uint8_t*)cmd, len, 1000);
-    if (err != ESP_OK) {
+    char cmd_with_cr[32];
+    snprintf(cmd_with_cr, sizeof(cmd_with_cr), "%s\r", cmd);
+    size_t len = strlen(cmd_with_cr);
+    esp_err_t err = cdc_acm_host_data_tx_blocking(cdc_hdl, (const uint8_t*)cmd_with_cr, len, 1000);    if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to send command: %s", esp_err_to_name(err));
         return err;
     }
@@ -285,6 +383,7 @@ static void usb_client_task(void* arg)
         if (!tcm_connected) {
             if (enumerate_TCM_device()) {
                 if (connect_and_switch_TCM(client_hdl, TCMdev_desc, TCMconfig_desc)) {
+                    send_command(STOP_CMD);
                     tcm_connected = true;
                 }
             }
@@ -293,15 +392,15 @@ static void usb_client_task(void* arg)
             }
         }
         else {
-			ESP_LOGI(TAG, "TCM connected");
-            send_command("STP\r");
-			vTaskDelay(pdMS_TO_TICKS(500));
-            send_command("GFV\r");
-			vTaskDelay(pdMS_TO_TICKS(500));
-            send_command("GSN\r");
-            vTaskDelay(pdMS_TO_TICKS(500));
-            send_command("GSR\r");
-            vTaskDelay(pdMS_TO_TICKS(500));
+			if (version[0] == 0){
+				send_command(FIRMWARE_VERSION_CMD);
+			}
+			else if (serial[0] == 0) {
+				send_command(SERIAL_NUMBER_CMD);
+			}
+            else if (!got_sensor_readings) {
+                send_command(SENSOR_READINGS_CMD);
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(2000));

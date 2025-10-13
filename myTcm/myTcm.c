@@ -13,10 +13,6 @@
 // 
 // 
 
-#define DECLINATION_DEG  -7.66f  // Magnetic declination for Grenville NC
-
-#define NUM_ITERATIONS 20
-
 // Lowell Instruments TCM Commands
 #define FIRMWARE_VERSION_CMD   "GFV"
 #define CALIBRATION_CMD        "RHS"
@@ -43,6 +39,12 @@
 #define LOGGER_HSA_CMD_W       "WHS"
 #define REQ_FILE_NAME_CMD      "RFN"
 #define DIR_CMD                "DIR"
+
+
+
+#define DECLINATION_DEG  -7.66f  // Magnetic declination for Grenville NC
+
+#define NUM_ITERATIONS 20
 
 TcmInfo tcmInfo;
 TcmAverage tcmAvg;
