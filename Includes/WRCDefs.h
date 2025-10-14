@@ -1,7 +1,3 @@
-/*
-Definitions
-*/
-
 // Hardware
 #define LOW 0
 #define HIGH 1
@@ -11,7 +7,6 @@ Definitions
 #ifdef CONFIG_IDF_TARGET_ESP32S3
 #define RGB_PIN 48
 #endif
-
 #define NUM_LEDS 8
 
 // Memory
@@ -26,3 +21,7 @@ Definitions
 #define MAGIC 247
 #define MAX_INT16 32767
 #define ZERO_KELVIN -273.15
+#define NUM_ITERATIONS_TO_AVERAGE 20
+#define DECLINATION_DEG  -7.66f  // Magnetic declination for Grenville NC
+
+

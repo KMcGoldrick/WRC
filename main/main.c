@@ -121,11 +121,11 @@ void app_main(void)
 	initNvsLog(erase_nvs_log,print_nvs_log);
     appendNvsLog("\n......Start......\n");
     //initUsb();
-    //initTcm();
+    initTcm();
 
     while (1) {
         runLED();
-        //runTcm();
+        runTcm();
 
         ESP_LOGD(TAG, "Looping... %d", ++loopCounter);
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));

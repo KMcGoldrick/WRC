@@ -1,5 +1,5 @@
-extern void initTcm();
 extern void runTcm();
+extern void initTcm();
 
 typedef struct {
     float X;
@@ -7,14 +7,12 @@ typedef struct {
     float Z;
 } XYZ;
 
-// Structure holding calibration data
 typedef struct {
     float gain[3][3];   // 3x3 gain matrix
     float offset[3];    // 3x1 offset vector
     float cubic[3];     // 3x1 cubic correction
 } CubicAccelerometer;
 
-// Structure for magnetometer calibration
 typedef struct {
     float softIron[3][3];  // 3x3 soft-iron correction matrix
     float hardIron[3];     // 3x1 hard-iron offset

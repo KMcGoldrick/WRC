@@ -7,11 +7,8 @@
 #include "nvs.h"             
 #include "myNvs.h"           
 #include "myTcm.h"
+#include "myUsb.h"
 #include "WRCDefs.h"  
-
-// Questions for Lowell Instruments:
-// 
-// 
 
 // Lowell Instruments TCM Commands
 #define FIRMWARE_VERSION_CMD   "GFV"
@@ -40,17 +37,13 @@
 #define REQ_FILE_NAME_CMD      "RFN"
 #define DIR_CMD                "DIR"
 
-
-
-#define DECLINATION_DEG  -7.66f  // Magnetic declination for Grenville NC
-
-#define NUM_ITERATIONS 20
+#define TAG "myTcm"
 
 TcmInfo tcmInfo;
 TcmAverage tcmAvg;
 
 bool getCalibrations(void) {
-    ESP_LOGE("TCM", "Get calibrations not implemented");
+    ESP_LOGE(TAG, "Get calibrations not implemented");
     // Default to hardcoded calibration values
     tcmInfo.tempCal = (TempCalCoef){ 0, 10000, 0.0011238100354f, 0.0002349457073f, 0.0000000848361f, 0.0f };
     tcmInfo.accCal = (CubicAccelerometer){
@@ -66,12 +59,12 @@ bool getCalibrations(void) {
 }
 
 bool getStringCmd(const char* cmd, char* response, size_t responseSize) {
-	ESP_LOGE("TCM", "Get string command not implemented");
+	ESP_LOGE(TAG, "Get string command not implemented");
     return false;
 }
 
 bool getRaws() {
-    ESP_LOGE("TCM", "Get raw sensor data not implemented");
+    ESP_LOGE(TAG, "Get raw sensor data not implemented");
 	tcmInfo.raw.Batt = 3700; // Fix Example raw battery value in mV
 	tcmInfo.raw.Temp = 2500.0f; // Fix Example raw temperature value
 	tcmInfo.raw.Acc = (XYZ){ 512.0f, 0.0f, -512.0f }; // Fix Example raw accelerometer values
@@ -84,7 +77,7 @@ bool getVersion(void) {
         return true;
     }
     else {
-        ESP_LOGE("TCM", "Failed to get TCM version");
+        ESP_LOGE(TAG, "Failed to get TCM version");
         strncpy(tcmInfo.version, "?.?.?", sizeof(tcmInfo.version) - 1);
         tcmInfo.version[sizeof(tcmInfo.version) - 1] = '\0';
         return false;
@@ -246,7 +239,7 @@ float calcHeading() {
 }
 
 float speedFromTilt() {
-    ESP_LOGE("TCM", "Speed from tilt not implemented");
+    ESP_LOGE(TAG, "Speed from tilt not implemented");
     float result;
 
     result = 24.7;
@@ -275,18 +268,18 @@ void calcTcm() {
 }
 
 void dispTcm() {
-    ESP_LOGI("TCM", "TCM Version: %s", tcmInfo.version);
-    ESP_LOGI("TCM", "Battery: %.2f V", tcmInfo.scaled.Batt);
-    ESP_LOGI("TCM", "Temperature: %.2f C", tcmInfo.scaled.Temp);
-    ESP_LOGI("TCM", "Acceleration(g): X=%.2f Y=%.2f Z=%.2f", 
+    ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
+    ESP_LOGI(TAG, "Battery: %.2f V", tcmInfo.scaled.Batt);
+    ESP_LOGI(TAG, "Temperature: %.2f C", tcmInfo.scaled.Temp);
+    ESP_LOGI(TAG, "Acceleration(g): X=%.2f Y=%.2f Z=%.2f", 
         tcmInfo.scaled.Acc.X, tcmInfo.scaled.Acc.Y, tcmInfo.scaled.Acc.Z);
-    ESP_LOGI("TCM", "Magnetometer(mG): X=%.2f Y=%.2f Z=%.2f", 
+    ESP_LOGI(TAG, "Magnetometer(mG): X=%.2f Y=%.2f Z=%.2f",
         tcmInfo.scaled.Mag.X, tcmInfo.scaled.Mag.Y, tcmInfo.scaled.Mag.Z);
-    ESP_LOGI("TCM", "Orientation(rad): Roll=%.2f Pitch=%.2f Yaw=%.2f", 
+    ESP_LOGI(TAG, "Orientation(rad): Roll=%.2f Pitch=%.2f Yaw=%.2f",
         tcmInfo.orientation.rollRad, tcmInfo.orientation.pitchRad, tcmInfo.orientation.yawRad);
-    ESP_LOGI("TCM", "Heading(deg): %.2f", tcmInfo.headingDeg);
-    ESP_LOGI("TCM", "Current Velocity(?): North=%.2f East=%.2f", 
-		tcmInfo.current.North, tcmInfo.current.East);
+    ESP_LOGI(TAG, "Heading(deg): %.2f", tcmInfo.headingDeg);
+    ESP_LOGI(TAG, "Current Velocity(?): North=%.2f East=%.2f",
+        tcmInfo.current.North, tcmInfo.current.East);
 }
 
 void addRaws() {
@@ -329,13 +322,13 @@ void tcmAlgo() {
       That is faster than you will be able to sample over the virtual comm port,
       but you can sample at a slower rate for a longer time and get a similar result.
     */
-    if (tcmAvg.sampleCount < NUM_ITERATIONS) {
-        ESP_LOGI("TCM", "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS);
+    if (tcmAvg.sampleCount < NUM_ITERATIONS_TO_AVERAGE) {
+        ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
         addRaws();
         tcmAvg.sampleCount++;
     }
-    if (tcmAvg.sampleCount == NUM_ITERATIONS) {
-        ESP_LOGI("TCM", "Averaged %d samples", NUM_ITERATIONS);
+    if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
+        ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
 		calcAndCopyAverages();
         // Recalculate values based on averaged raw values
         calcTcm();
@@ -347,24 +340,18 @@ void tcmAlgo() {
 }
 
 void initTcm() {
+    esp_log_level_set(TAG, ESP_LOG_INFO);
 	getVersion();
+    resetAverges();
     getCalibrations();
 
-    tcmAvg = (TcmAverage){
-        .rawSum.Acc = {0.0f, 0.0f, 0.0f},
-        .rawSum.Mag = {0.0f, 0.0f, 0.0f},
-        .rawSum.Temp = 0.0f,
-		.rawSum.Batt = 0.0f,
-        .sampleCount = 0
-	};
-
-	ESP_LOGI("TCM", "TCM Version: %s", tcmInfo.version);
-	ESP_LOGI("TCM", "TCM Initialized");
+	ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
+	ESP_LOGI(TAG, "TCM Initialized");
 }
 
 void runTcm() {
     if (!getRaws()) {
-        ESP_LOGE("TCM", "Failed to get raw sensor data");
+        ESP_LOGE(TAG, "Failed to get raw sensor data");
         return;
     }
     else {
