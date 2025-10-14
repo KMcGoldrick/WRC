@@ -12,10 +12,12 @@
 #include "nvs.h"
 #include <stdio.h>
 
+#define TAG "WRC"
+
 int loopCounter = 0;
-bool erase_nvs = false;
-bool processRunning = false;
 led_strip_handle_t led_strip;
+bool erase_nvs = false; // Set to true to erase NVS on startup
+bool processRunning = false; // Update based on TCM status
 
 unsigned long millis() {
     return (unsigned long)(esp_timer_get_time() / 1000ULL);
@@ -60,7 +62,7 @@ void sequenceLED() {
 void runLED() {
     static unsigned long lastToggleTime = 0; // Tracks the last time the LED state was toggled
     unsigned long currentTime = millis();
-    int ledTime_ms = 1000;
+    int ledTime_ms = LEDTime_ms;
 
     if (processRunning) {
         ledTime_ms = LEDTime_ms;
@@ -91,16 +93,30 @@ void runLED() {
 
 void app_main(void)
 {
+
+    /*
+    * Levels available:
+        •	ESP_LOG_NONE
+        •	ESP_LOG_ERROR
+        •	ESP_LOG_WARN
+        •	ESP_LOG_INFO
+        •	ESP_LOG_DEBUG
+        •	ESP_LOG_VERBOSE
+		hint: Run idf.py menuconfig, can set the default log level
+    */
+    esp_log_level_set("*", ESP_LOG_WARN);
+	esp_log_level_set(TAG, ESP_LOG_WARN);
+	// Use LOGE to force Hello message
 #ifdef CONFIG_IDF_TARGET_ESP32S2
-    ESP_LOGI("WRC", "Hello from the ESP32-S2!......................................");
+    ESP_LOGE(TAG, "Hello from the ESP32-S2!......................................");
 #endif
 #ifdef CONFIG_IDF_TARGET_ESP32S3
-	ESP_LOGI("WRC", "Hello from the ESP32-S3!......................................");
+	ESP_LOGE(TAG, "Hello from the ESP32-S3!......................................");
 #endif
 	initLED();
 	sequenceLED();
-	initNvsLog(erase_nvs);
-    initUsb();
+	//initNvsLog(erase_nvs);
+    //initUsb();
     //initTcm();
 
 
@@ -108,7 +124,7 @@ void app_main(void)
         runLED();
         //runTcm();
 
-        //ESP_LOGI("WRC", "Looping... %d", ++loopCounter);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGD(TAG, "Looping... %d", ++loopCounter);
+        vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
     }
 }

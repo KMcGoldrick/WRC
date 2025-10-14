@@ -19,7 +19,8 @@ Definitions
 
 // Timing
 #define LEDTime_ms 1000
-#define STARTDelay_ms 1000 // Time for TCM to to startup
+#define STARTDelay_ms 1000 
+#define MAIN_LOOP_RATE_MS 1000
 
 // Other
 #define MAGIC 247
