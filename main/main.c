@@ -16,8 +16,9 @@
 
 int loopCounter = 0;
 led_strip_handle_t led_strip;
-bool erase_nvs = false; // Set to true to erase NVS on startup
 bool processRunning = false; // Update based on TCM status
+bool erase_nvs_log = false; // Set to true to erase NVS on startup
+bool print_nvs_log = false;  // Set to true to print NVS log on startup
 
 unsigned long millis() {
     return (unsigned long)(esp_timer_get_time() / 1000ULL);
@@ -106,6 +107,7 @@ void app_main(void)
     */
     esp_log_level_set("*", ESP_LOG_WARN);
 	esp_log_level_set(TAG, ESP_LOG_WARN);
+
 	// Use LOGE to force Hello message
 #ifdef CONFIG_IDF_TARGET_ESP32S2
     ESP_LOGE(TAG, "Hello from the ESP32-S2!......................................");
@@ -113,12 +115,13 @@ void app_main(void)
 #ifdef CONFIG_IDF_TARGET_ESP32S3
 	ESP_LOGE(TAG, "Hello from the ESP32-S3!......................................");
 #endif
+
 	initLED();
 	sequenceLED();
-	//initNvsLog(erase_nvs);
+	initNvsLog(erase_nvs_log,print_nvs_log);
+    appendNvsLog("\n......Start......\n");
     //initUsb();
     //initTcm();
-
 
     while (1) {
         runLED();
