@@ -21,7 +21,7 @@ bool tcm_connected = false;
 
 char buff[128];
 char readings[64] = { 0 };
-bool got_sensor_readings = false;
+bool get_sensor_readings = false;
 
 // Handle to TCM device
 usb_device_handle_t TCMdev_hdl = NULL;
@@ -34,6 +34,11 @@ const usb_device_desc_t* TCMdev_desc = NULL;
 cdc_acm_dev_hdl_t cdc_hdl = NULL;
 // Connection handle to USB Host library
 usb_host_client_handle_t client_hdl = NULL;
+
+void readSensors(void)
+{
+    get_sensor_readings = true;
+}
 
 void parse_response(const uint8_t* data, size_t data_len) {
     // Firmware version
@@ -86,7 +91,7 @@ void parse_response(const uint8_t* data, size_t data_len) {
                     strncpy(readings, sr_start, len);
                     readings[len] = '\0';
                     ESP_LOGI(TAG, "Sensor readings: %s", readings);
-                    got_sensor_readings = true;
+                    get_sensor_readings = false;
                 }
             }
         }
@@ -368,7 +373,7 @@ void usb_client_task(void* arg)
 			else if (tcmInfo.serialNum[0] == 0) {
 				send_command(SERIAL_NUMBER_CMD);
 			}
-            else if (!got_sensor_readings) {
+            else if (get_sensor_readings) {
                 send_command(SENSOR_READINGS_CMD);
             }
         }
