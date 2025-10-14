@@ -16,75 +16,42 @@
 
 #define TAG "USB"
 
-#define TCM_VID 0x2047
-#define TCM_PID 0x08AE
-
-// Lowell Instruments TCM Commands
-#define FIRMWARE_VERSION_CMD   "GFV"
-#define CALIBRATION_CMD        "RHS"
-#define INTERVAL_TIME_CMD      "GIT"
-#define LOGGER_INFO_CMD        "RLI"
-#define LOGGER_SETTINGS_CMD    "GLS"
-#define PAGE_COUNT_CMD         "GPC"
-#define RESET_CMD              "RST"
-#define RUN_CMD                "RUN"
-#define SD_CAPACITY_CMD        "CTS"
-#define SD_FILE_SIZE_CMD       "FSZ"
-#define SD_FREE_SPACE_CMD      "CFS"
-#define SENSOR_READINGS_CMD    "GSR"
-#define SERIAL_NUMBER_CMD      "GSN"
-#define START_TIME_CMD         "GST"
-#define STATUS_CMD             "STS"
-#define STOP_CMD               "STP"
-#define SWS_CMD                "SWS"
-#define RWS_CMD                "RWS"
-#define SET_TIME_CMD           "STM"
-#define TIME_CMD               "GTM"
-#define DEL_FILE_CMD           "DEL"
-#define LOGGER_INFO_CMD_W      "WLI"
-#define LOGGER_HSA_CMD_W       "WHS"
-#define REQ_FILE_NAME_CMD      "RFN"
-#define DIR_CMD                "DIR"
-
-
-// Array of commands
+bool usb_host_initialized = false;
 bool tcm_connected = false;
+
 char buff[128];
-char version[16] = { 0 };
-char serial[32] = { 0 };
 char readings[64] = { 0 };
 bool got_sensor_readings = false;
 
-
 // Handle to TCM device
-static usb_device_handle_t TCMdev_hdl = NULL;
+usb_device_handle_t TCMdev_hdl = NULL;
 // Configuration descriptor of TCM device
-static usb_config_desc_t* TCMconfig_desc = NULL;
+usb_config_desc_t* TCMconfig_desc = NULL;
 // Descriptor of TCM device
-static const usb_device_desc_t* TCMdev_desc = NULL;
+const usb_device_desc_t* TCMdev_desc = NULL;
 
 // Handle to CDC-ACM device driver
-static cdc_acm_dev_hdl_t cdc_hdl = NULL;
+cdc_acm_dev_hdl_t cdc_hdl = NULL;
 // Connection handle to USB Host library
-static usb_host_client_handle_t client_hdl = NULL;
+usb_host_client_handle_t client_hdl = NULL;
 
-static void parse_response(const uint8_t* data, size_t data_len) {
+void parse_response(const uint8_t* data, size_t data_len) {
     // Firmware version
     const char* fw_start = strstr((const char*)data, FIRMWARE_VERSION_CMD);
     if (fw_start) {
         fw_start = strchr(fw_start, ' ');
         if (fw_start) {
-            fw_start +=3; // Point to version string
+            fw_start += 3; // Point to version string
             const char* fw_end = strchr(fw_start, '\r');
             if (fw_end) {
                 size_t len = fw_end - fw_start;
-                if (len < sizeof(version)) {
-                    strncpy(version, fw_start, len);
-                    version[len] = '\0';
-                    ESP_LOGI(TAG, "Firmware version: %s", version);
+                if (len < sizeof(tcmInfo.version)) {
+                    strncpy(tcmInfo.version, fw_start, len);
+                    tcmInfo.version[len] = '\0';
                 }
             }
         }
+		ESP_LOGI(TAG, "Parsed Firmware version: %s", tcmInfo.version);
     }
 
     // Serial number
@@ -92,17 +59,17 @@ static void parse_response(const uint8_t* data, size_t data_len) {
     if (sn_start) {
         sn_start = strchr(sn_start, ' ');
         if (sn_start) {
-            sn_start +=3; // Point to serial number string
+            sn_start += 3; // Point to serial number string
             const char* sn_end = strchr(sn_start, '\r');
             if (sn_end) {
                 size_t len = sn_end - sn_start;
-                if (len < sizeof(serial)) {
-                    strncpy(serial, sn_start, len);
-                    serial[len] = '\0';
-                    ESP_LOGI(TAG, "Serial number: %s", serial);
+                if (len < sizeof(tcmInfo.serialNum)) {
+                    strncpy(tcmInfo.serialNum, sn_start, len);
+                    tcmInfo.serialNum[len] = '\0';
                 }
             }
         }
+        ESP_LOGI(TAG, "Parsed Serial Number: %s", tcmInfo.serialNum);
     }
 
     // Sensor readings
@@ -110,7 +77,7 @@ static void parse_response(const uint8_t* data, size_t data_len) {
     if (sr_start) {
         sr_start = strchr(sr_start, ' ');
         if (sr_start) {
-            sr_start +=3; // Point to sensor readings string
+            sr_start += 3; // Point to sensor readings string
             const char* sr_end = strchr(sr_start, '\r');
             if (sr_end) {
                 char readings[64] = { 0 };
@@ -119,14 +86,14 @@ static void parse_response(const uint8_t* data, size_t data_len) {
                     strncpy(readings, sr_start, len);
                     readings[len] = '\0';
                     ESP_LOGI(TAG, "Sensor readings: %s", readings);
-					got_sensor_readings = true;
+                    got_sensor_readings = true;
                 }
             }
         }
     }
 }
 
-static void handle_rx(uint8_t* data, size_t data_len, void* user_arg)
+void handle_rx(uint8_t* data, size_t data_len, void* user_arg)
 {
     // Only log if the received data is not "ERR 00"
     if (data_len == 8 && memcmp(data, "ERR 00..", 6) == 0) {
@@ -138,8 +105,9 @@ static void handle_rx(uint8_t* data, size_t data_len, void* user_arg)
     // If you need to process data, do it here.
 	parse_response(data, data_len);
 }
+
 // CDC-ACM configuration
-static const cdc_acm_host_device_config_t dev_config = {
+const cdc_acm_host_device_config_t dev_config = {
     .connection_timeout_ms = 2000,
     .out_buffer_size = 512,
     .user_arg = NULL,
@@ -147,7 +115,7 @@ static const cdc_acm_host_device_config_t dev_config = {
     .data_cb = handle_rx
 };
 
-static bool enumerate_TCM_device(void)
+bool enumerate_TCM_device(void)
 {
     uint8_t addr_list[8];
     int addr_count = 0;
@@ -206,7 +174,7 @@ static bool enumerate_TCM_device(void)
         if (err == ESP_OK && config_desc)
         {
             TCMconfig_desc = (usb_config_desc_t*)config_desc; // Save for later use
-            ESP_LOGI(TAG, "  bNumInterfaces = %d", config_desc->bNumInterfaces);
+            ESP_LOGI(TAG, "bNumInterfaces = %d", config_desc->bNumInterfaces);
 
             int offset = config_desc->bLength; // start after config descriptor
             const usb_standard_desc_t* desc = NULL;
@@ -254,7 +222,7 @@ static bool enumerate_TCM_device(void)
 	return (TCMdev_hdl != NULL);
 }
 
-static void usb_event_handler_task(void* arg)
+void usb_event_handler_task(void* arg)
 {
     while (1) {
         uint32_t event_flags;
@@ -272,7 +240,7 @@ static void usb_event_handler_task(void* arg)
     }
 }
 
-static esp_err_t send_command(const char* cmd)
+esp_err_t send_command(const char* cmd)
 {
     if (cdc_hdl == NULL) {
         ESP_LOGE(TAG, "CDC handle not initialized");
@@ -291,7 +259,7 @@ static esp_err_t send_command(const char* cmd)
     return err;
 }
 
-static bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
+bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
     const usb_device_desc_t* dev_desc,
     const usb_config_desc_t* config_desc)
 {
@@ -359,7 +327,7 @@ static bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
     }
 }
 
-static void usb_client_task(void* arg)
+void usb_client_task(void* arg)
 {
     vTaskDelay(pdMS_TO_TICKS(200)); // let the host initialize first
 
@@ -379,6 +347,8 @@ static void usb_client_task(void* arg)
     ESP_ERROR_CHECK(cdc_acm_host_install(NULL));
     ESP_LOGI(TAG, "CDC-ACM driver installed");
 
+    usb_host_initialized = true;
+
     while (1) {
         if (!tcm_connected) {
             if (enumerate_TCM_device()) {
@@ -392,10 +362,10 @@ static void usb_client_task(void* arg)
             }
         }
         else {
-			if (version[0] == 0){
+			if (tcmInfo.version[0] == 0){
 				send_command(FIRMWARE_VERSION_CMD);
 			}
-			else if (serial[0] == 0) {
+			else if (tcmInfo.serialNum[0] == 0) {
 				send_command(SERIAL_NUMBER_CMD);
 			}
             else if (!got_sensor_readings) {
@@ -409,6 +379,7 @@ static void usb_client_task(void* arg)
 
 void initUsb(void)
 {
+    esp_log_level_set(TAG, ESP_LOG_INFO);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,
@@ -422,4 +393,16 @@ void initUsb(void)
 
     xTaskCreatePinnedToCore(usb_event_handler_task, "usb_event_handler", 4096, NULL, 6, NULL, 0);
     xTaskCreatePinnedToCore(usb_client_task, "usb_client_task", 8192, NULL, 5, NULL, 1);
+
+    while (!usb_host_initialized) {
+		ESP_LOGI(TAG, "Waiting for USB host to initialize...");
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+	ESP_LOGI(TAG, "USB host initialized");
+
+    while (!tcm_connected) {
+        ESP_LOGI(TAG, "Waiting for TCM to connect...");
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    ESP_LOGI(TAG, "TCM connected");
 }

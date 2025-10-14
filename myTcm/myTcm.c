@@ -10,33 +10,6 @@
 #include "myUsb.h"
 #include "WRCDefs.h"  
 
-// Lowell Instruments TCM Commands
-#define FIRMWARE_VERSION_CMD   "GFV"
-#define CALIBRATION_CMD        "RHS"
-#define INTERVAL_TIME_CMD      "GIT"
-#define LOGGER_INFO_CMD        "RLI"
-#define LOGGER_SETTINGS_CMD    "GLS"
-#define PAGE_COUNT_CMD         "GPC"
-#define RESET_CMD              "RST"
-#define RUN_CMD                "RUN"
-#define SD_CAPACITY_CMD        "CTS"
-#define SD_FILE_SIZE_CMD       "FSZ"
-#define SD_FREE_SPACE_CMD      "CFS"
-#define SENSOR_READINGS_CMD    "GSR"
-#define SERIAL_NUMBER_CMD      "GSN"
-#define START_TIME_CMD         "GST"
-#define STATUS_CMD             "STS"
-#define STOP_CMD               "STP"
-#define SWS_CMD                "SWS"
-#define RWS_CMD                "RWS"
-#define SET_TIME_CMD           "STM"
-#define TIME_CMD               "GTM"
-#define DEL_FILE_CMD           "DEL"
-#define LOGGER_INFO_CMD_W      "WLI"
-#define LOGGER_HSA_CMD_W       "WHS"
-#define REQ_FILE_NAME_CMD      "RFN"
-#define DIR_CMD                "DIR"
-
 #define TAG "myTcm"
 
 TcmInfo tcmInfo;
@@ -58,11 +31,6 @@ bool getCalibrations(void) {
 	return true;
 }
 
-bool getStringCmd(const char* cmd, char* response, size_t responseSize) {
-	ESP_LOGE(TAG, "Get string command not implemented");
-    return false;
-}
-
 bool getRaws() {
     ESP_LOGE(TAG, "Get raw sensor data not implemented");
 	tcmInfo.raw.Batt = 3700; // Fix Example raw battery value in mV
@@ -70,18 +38,6 @@ bool getRaws() {
 	tcmInfo.raw.Acc = (XYZ){ 512.0f, 0.0f, -512.0f }; // Fix Example raw accelerometer values
 	tcmInfo.raw.Mag = (XYZ){ 100.0f, 200.0f, -50.0f }; // Fix Example raw magnetometer values
     return true;
-}
-
-bool getVersion(void) {
-    if (getStringCmd(FIRMWARE_VERSION_CMD, tcmInfo.version, sizeof(tcmInfo.version))) {
-        return true;
-    }
-    else {
-        ESP_LOGE(TAG, "Failed to get TCM version");
-        strncpy(tcmInfo.version, "?.?.?", sizeof(tcmInfo.version) - 1);
-        tcmInfo.version[sizeof(tcmInfo.version) - 1] = '\0';
-        return false;
-    }
 }
 
 float calcTempC() {
@@ -269,6 +225,7 @@ void calcTcm() {
 
 void dispTcm() {
     ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
+	ESP_LOGI(TAG, "Serial Number: %s", tcmInfo.serialNum);
     ESP_LOGI(TAG, "Battery: %.2f V", tcmInfo.scaled.Batt);
     ESP_LOGI(TAG, "Temperature: %.2f C", tcmInfo.scaled.Temp);
     ESP_LOGI(TAG, "Acceleration(g): X=%.2f Y=%.2f Z=%.2f", 
@@ -341,7 +298,6 @@ void tcmAlgo() {
 
 void initTcm() {
     esp_log_level_set(TAG, ESP_LOG_INFO);
-	getVersion();
     resetAverges();
     getCalibrations();
 

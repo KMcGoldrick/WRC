@@ -47,7 +47,7 @@ typedef struct {
 
 typedef struct {
     char version[12];
-    int serialNum;
+    char serialNum[12];
     Sensors raw;
     Sensors scaled;
     TempCalCoef tempCal;
@@ -62,3 +62,5 @@ typedef struct {
 	Sensors rawSum;
 	int sampleCount;
 } TcmAverage;
+
+extern TcmInfo tcmInfo;

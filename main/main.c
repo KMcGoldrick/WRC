@@ -109,18 +109,20 @@ void app_main(void)
 	esp_log_level_set(TAG, ESP_LOG_WARN);
 
 	// Use LOGE to force Hello message
+	ESP_LOGE(TAG, "..............................................................");
 #ifdef CONFIG_IDF_TARGET_ESP32S2
-    ESP_LOGE(TAG, "Hello from the ESP32-S2!......................................");
+    ESP_LOGE(TAG, "................Hello from the ESP32-S2!......................");
 #endif
 #ifdef CONFIG_IDF_TARGET_ESP32S3
-	ESP_LOGE(TAG, "Hello from the ESP32-S3!......................................");
+	ESP_LOGE(TAG, "................Hello from the ESP32-S3!......................");
 #endif
+    ESP_LOGE(TAG, "..............................................................");
 
 	initLED();
 	sequenceLED();
 	initNvsLog(erase_nvs_log,print_nvs_log);
     appendNvsLog("\n......Start......\n");
-    //initUsb();
+    initUsb();
     initTcm();
 
     while (1) {
