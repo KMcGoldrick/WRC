@@ -30,12 +30,15 @@
 
 #define TAG "USB"
 
-bool usb_host_initialized = false;
-bool tcm_connected = false;
-
 char buff[128];
 char readings[64] = { 0 };
-bool get_sensor_readings = false;
+
+bool tcm_connected = false;
+bool usb_host_initialized = false;
+
+bool get_version = true;
+bool get_serialNum = true;
+bool get_sensor_readings = true;
 
 // Handle to TCM device
 usb_device_handle_t TCMdev_hdl = NULL;
@@ -70,6 +73,7 @@ void parse_response(const uint8_t* data, size_t data_len) {
                 }
             }
         }
+		get_version = false;
 		ESP_LOGI(TAG, "Parsed Firmware version: %s", tcmInfo.version);
     }
 
@@ -88,27 +92,27 @@ void parse_response(const uint8_t* data, size_t data_len) {
                 }
             }
         }
+		get_serialNum = false;
         ESP_LOGI(TAG, "Parsed Serial Number: %s", tcmInfo.serialNum);
     }
 
     // Sensor readings
     const char* sr_start = strstr((const char*)data, SENSOR_READINGS_CMD);
     if (sr_start) {
-        sr_start = strchr(sr_start, ' ');
-        if (sr_start) {
-            sr_start += 3; // Point to sensor readings string
+            sr_start += 6; // Skip "GSR 28" prefix
             const char* sr_end = strchr(sr_start, '\r');
-            if (sr_end) {
-                char readings[64] = { 0 };
-                size_t len = sr_end - sr_start;
-                if (len < sizeof(readings)) {
-                    strncpy(readings, sr_start, len);
-                    readings[len] = '\0';
-                    ESP_LOGI(TAG, "Sensor readings: %s", readings);
-                    get_sensor_readings = false;
-                }
+            // sr_start points to the ASCII hex string, e.g. "3986b8ee600259ff..."
+            if (!sr_end) {
+                ESP_LOGE(TAG, "Malformed sensor readings response");
+                return;
             }
-        }
+            else {
+                ESP_LOGI(TAG, "String:");
+                ESP_LOG_BUFFER_HEXDUMP(TAG, sr_start, sr_end - sr_start, ESP_LOG_INFO);
+            }
+
+
+            get_sensor_readings = false;
     }
 }
 
@@ -381,10 +385,10 @@ void usb_client_task(void* arg)
             }
         }
         else {
-			if (tcmInfo.version[0] == 0){
+			if (get_version){
 				send_command(FIRMWARE_VERSION_CMD);
 			}
-			else if (tcmInfo.serialNum[0] == 0) {
+			else if (get_serialNum) {
 				send_command(SERIAL_NUMBER_CMD);
 			}
             else if (get_sensor_readings) {
