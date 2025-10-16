@@ -1,16 +1,23 @@
+// ------------------------------
+// ESP-IDF System Headers
+// ------------------------------
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
-#include "led_strip.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+
+// ------------------------------
+// Driver / Component Headers
+// ------------------------------
+#include "led_strip.h"
+
+// ------------------------------
+// Project Headers
+// ------------------------------
 #include "WRCDefs.h"
-#include "nvs_flash.h"
 #include "myNvs.h"
 #include "myTcm.h"
 #include "myUsb.h"
-#include "nvs.h"
-#include <stdio.h>
 
 #define TAG "WRC"
 

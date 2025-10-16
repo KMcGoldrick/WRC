@@ -1,2 +1,5 @@
-extern void initUsb();
-extern void readSensors();
+// ------------------------------
+// USB and Sensor Functions
+// ------------------------------
+extern void initUsb(void);
+extern void readSensors(void);

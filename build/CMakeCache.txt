@@ -160,7 +160,7 @@ CMAKE_INSTALL_MANDIR:PATH=
 CMAKE_INSTALL_OLDINCLUDEDIR:PATH=/usr/include
 
 //Install path prefix, prepended onto install directories.
-CMAKE_INSTALL_PREFIX:PATH=C:/Program Files (x86)/WRC6
+CMAKE_INSTALL_PREFIX:PATH=C:/Program Files (x86)/WRC
 
 //Run-time variable data (LOCALSTATEDIR/run)
 CMAKE_INSTALL_RUNSTATEDIR:PATH=
@@ -366,15 +366,6 @@ USE_SHARED_MBEDTLS_LIBRARY:BOOL=OFF
 
 //Build Mbed TLS static library.
 USE_STATIC_MBEDTLS_LIBRARY:BOOL=ON
-
-//Value Computed by CMake
-WRC6_BINARY_DIR:STATIC=C:/Users/kevin/source/repos/WRC/build
-
-//Value Computed by CMake
-WRC6_IS_TOP_LEVEL:STATIC=ON
-
-//Value Computed by CMake
-WRC6_SOURCE_DIR:STATIC=C:/Users/kevin/source/repos/WRC
 
 //Value Computed by CMake
 WRC_BINARY_DIR:STATIC=C:/Users/kevin/source/repos/WRC/build
@@ -611,7 +602,7 @@ FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
 //ADVANCED property for variable: GIT_EXECUTABLE
 GIT_EXECUTABLE-ADVANCED:INTERNAL=1
 //CMAKE_INSTALL_PREFIX during last run
-_GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX:INTERNAL=C:/Program Files (x86)/WRC6
+_GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX:INTERNAL=C:/Program Files (x86)/WRC
 //Compiler reason failure
 _Python3_Compiler_REASON_FAILURE:INTERNAL=
 //Development reason failure

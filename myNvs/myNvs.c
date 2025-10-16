@@ -1,11 +1,20 @@
-﻿#include <stdio.h>           
-#include <string.h>          
-#include <stdlib.h>          
-#include "esp_log.h"         
-#include "nvs_flash.h"       
-#include "nvs.h"             
-#include "myNvs.h"           
-#include "WRCDefs.h"  
+﻿// ------------------------------
+// Standard C Library
+// ------------------------------
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>     
+
+// ------------------------------
+// ESP-IDF Headers
+// ------------------------------
+#include "esp_log.h"
+
+// ------------------------------
+// Project Headers
+// ------------------------------
+#include "myNvs.h"
+#include "WRCDefs.h"    
 
 #define TAG "myNvs"
 

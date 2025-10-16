@@ -1,2 +1,11 @@
-extern void appendNvsLog(const char* data);
-extern void initNvsLog(bool erase, bool printLog);
+#pragma once
+
+#include <stdbool.h>    
+#include "nvs_flash.h"
+#include "nvs.h"
+
+// ------------------------------
+// NVS Logging Functions
+// ------------------------------
+void appendNvsLog(const char* data);
+void initNvsLog(bool erase, bool printLog);

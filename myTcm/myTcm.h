@@ -1,10 +1,15 @@
-extern void runTcm();
-extern void initTcm();
+#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+
+void runTcm(void);
+void initTcm(void);
 
 typedef struct {
-    float X;
-    float Y;
-    float Z;
+    float x;
+    float y;
+    float z;
 } XYZ;
 
 typedef struct {
@@ -19,21 +24,21 @@ typedef struct {
 } CubicMagnetometer;
 
 typedef struct {
-    XYZ Acc;
-    XYZ Mag;
-    float Temp;
-    float Batt;
+    XYZ acc;
+    XYZ mag;
+    float temp;
+    float batt;
 } Sensors;
 
 typedef struct {
     float rollRad;
-	float pitchRad;
-	float yawRad;
+    float pitchRad;
+    float yawRad;
 } RPY;
 
 typedef struct {
-    float North;
-	float East;
+    float north;
+    float east;
 } Velocity;
 
 typedef struct {
@@ -53,14 +58,14 @@ typedef struct {
     TempCalCoef tempCal;
     CubicMagnetometer magCal;
     CubicAccelerometer accCal;
-	RPY orientation;
-	float headingDeg;
-	Velocity current;
+    RPY orientation;
+    float headingDeg;
+    Velocity current;
 } TcmInfo;
 
 typedef struct {
-	Sensors rawSum;
-	int sampleCount;
+    Sensors rawSum;
+    int sampleCount;
 } TcmAverage;
 
 extern TcmInfo tcmInfo;

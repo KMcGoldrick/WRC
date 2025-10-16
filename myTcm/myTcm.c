@@ -1,153 +1,141 @@
-﻿#include <math.h>
-#include <stdio.h>           
-#include <string.h>          
-#include <stdlib.h>
-#include "esp_log.h"         
-#include "nvs_flash.h"       
-#include "nvs.h"             
-#include "myNvs.h"           
+﻿// ------------------------------
+// Standard C Library
+// ------------------------------
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+
+// ------------------------------
+// ESP-IDF Headers
+// ------------------------------
+#include "esp_log.h"
+
+// ------------------------------
+// Project Headers
+// ------------------------------
+#include "myNvs.h"
 #include "myTcm.h"
 #include "myUsb.h"
-#include "WRCDefs.h"  
+#include "WRCDefs.h"
 
 #define TAG "myTcm"
 
+// Global TCM info
 TcmInfo tcmInfo;
 TcmAverage tcmAvg;
 
+// ------------------------------
+// Placeholder: Calibration values
+// ------------------------------
 bool getCalibrations(void) {
     ESP_LOGE(TAG, "Get calibrations not implemented");
-    // Default to hardcoded calibration values
+
     tcmInfo.tempCal = (TempCalCoef){ 0, 10000, 0.0011238100354f, 0.0002349457073f, 0.0000000848361f, 0.0f };
     tcmInfo.accCal = (CubicAccelerometer){
         .gain = { {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} },
         .offset = { 0.0f, 0.0f, 0.0f },
         .cubic = { 0.0f, 0.0f, 0.0f }
-	};
+    };
     tcmInfo.magCal = (CubicMagnetometer){
         .softIron = { {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} },
         .hardIron = { 0.0f, 0.0f, 0.0f }
-	};
-	return true;
-}
-
-bool getRaws() {
-    ESP_LOGE(TAG, "Get raw sensor data not implemented");
-	tcmInfo.raw.Batt = 3700; // Fix Example raw battery value in mV
-	tcmInfo.raw.Temp = 2500.0f; // Fix Example raw temperature value
-	tcmInfo.raw.Acc = (XYZ){ 512.0f, 0.0f, -512.0f }; // Fix Example raw accelerometer values
-	tcmInfo.raw.Mag = (XYZ){ 100.0f, 200.0f, -50.0f }; // Fix Example raw magnetometer values
+    };
     return true;
 }
 
-float calcTempC() {
-    float temp, log_temp, denom, result;
+// ------------------------------
+// Placeholder: Raw sensor readings
+// ------------------------------
+bool getRaws(void) {
+    ESP_LOGE(TAG, "Get raw sensor data not implemented");
 
-    // Protect against invalid calibration coefficients
+    tcmInfo.raw.batt = 3700;      // mV
+    tcmInfo.raw.temp = 2500.0f;   // Raw temperature
+    tcmInfo.raw.acc = (XYZ){ 512.0f, 0.0f, -512.0f };
+    tcmInfo.raw.mag = (XYZ){ 100.0f, 200.0f, -50.0f };
+
+    return true;
+}
+
+// ------------------------------
+// Temperature and Battery
+// ------------------------------
+float calcTempC(void) {
     if (tcmInfo.tempCal.TMR == 0) {
-        ESP_LOGE("TCM", "Calibration error: TMR is zero");
+        ESP_LOGE(TAG, "Calibration error: TMR is zero");
         return ZERO_KELVIN;
     }
 
-    // Protect against raw.Temp out of range
-    if (tcmInfo.raw.Temp < 0.0f || tcmInfo.raw.Temp >= MAX_INT16) {
-        ESP_LOGE("TCM", "Raw temperature out of range: %.2f", tcmInfo.raw.Temp);
+    if (tcmInfo.raw.temp < 0.0f || tcmInfo.raw.temp >= MAX_INT16) {
+        ESP_LOGE(TAG, "Raw temperature out of range: %.2f", tcmInfo.raw.temp);
         return ZERO_KELVIN;
     }
 
-    // Prevent division by zero
-    float denom_temp = MAX_INT16 - tcmInfo.raw.Temp;
+    float denom_temp = MAX_INT16 - tcmInfo.raw.temp;
     if (denom_temp == 0.0f) {
-        ESP_LOGE("TCM", "Division by zero in temperature calculation");
+        ESP_LOGE(TAG, "Division by zero in temperature calculation");
         return ZERO_KELVIN;
     }
 
-    temp = (tcmInfo.raw.Temp * tcmInfo.tempCal.TMR) / denom_temp;
-
-    // Prevent log of non-positive value
+    float temp = (tcmInfo.raw.temp * tcmInfo.tempCal.TMR) / denom_temp;
     if (temp <= 0.0f) {
-        ESP_LOGE("TCM", "Logarithm of non-positive value in temperature calculation: temp=%.6f", temp);
+        ESP_LOGE(TAG, "Log of non-positive value: temp=%.6f", temp);
         return ZERO_KELVIN;
     }
 
-    log_temp = logf(temp);
-
-    denom = tcmInfo.tempCal.TMA +
+    float log_temp = logf(temp);
+    float denom = tcmInfo.tempCal.TMA +
         tcmInfo.tempCal.TMB * log_temp +
         tcmInfo.tempCal.TMD * log_temp * log_temp +
         tcmInfo.tempCal.TMC * log_temp * log_temp * log_temp;
 
     if (denom == 0.0f) {
-        ESP_LOGE("TCM", "Final denominator is zero in temperature calculation");
+        ESP_LOGE(TAG, "Final denominator is zero in temperature calculation");
         return ZERO_KELVIN;
     }
 
-    result = 1.0f / denom + ZERO_KELVIN;
-    return result;
+    return 1.0f / denom + ZERO_KELVIN;
 }
 
-float calcBattV() {
-	float result;
-	result = (tcmInfo.raw.Batt / 1000.0f); // Convert mV to V
-    return result;
+float calcBattV(void) {
+    return tcmInfo.raw.batt / 1000.0f; // Convert mV to V
 }
 
-XYZ calcAcc() {
-    float raw_accel[3];
-    XYZ acc;
+// ------------------------------
+// Accelerometer and Magnetometer
+// ------------------------------
+XYZ calcAcc(void) {
+    float raw[3] = { tcmInfo.raw.acc.x / 1024.0f, tcmInfo.raw.acc.y / 1024.0f, tcmInfo.raw.acc.z / 1024.0f };
+    XYZ acc = { 0 };
 
-    // Step 1: scale raw readings (like raw_meter / 1024.0)
-    raw_accel[0] = tcmInfo.raw.Acc.X / 1024.0f;
-    raw_accel[1] = tcmInfo.raw.Acc.Y / 1024.0f;
-    raw_accel[2] = tcmInfo.raw.Acc.Z / 1024.0f;
-
-
-    // Step 2: apply gain matrix (dot product)
+    // Apply gain matrix
     for (int i = 0; i < 3; i++) {
-        acc.X = 0.0f;
-        for (int j = 0; j < 3; j++) {
-            acc.X += tcmInfo.accCal.gain[i][j] * raw_accel[j];
-        }
-    }
-    for (int i = 0; i < 3; i++) {
-        acc.Y = 0.0f;
-        for (int j = 0; j < 3; j++) {
-            acc.Y += tcmInfo.accCal.gain[i][j] * raw_accel[j];
-        }
-    }
-    for (int i = 0; i < 3; i++) {
-        acc.Z = 0.0f;
-        for (int j = 0; j < 3; j++) {
-            acc.Z += tcmInfo.accCal.gain[i][j] * raw_accel[j];
-        }
+        acc.x += tcmInfo.accCal.gain[0][i] * raw[i];
+        acc.y += tcmInfo.accCal.gain[1][i] * raw[i];
+        acc.z += tcmInfo.accCal.gain[2][i] * raw[i];
     }
 
-    // Step 3: add offset and cubic correction
-    for (int i = 0; i < 3; i++) {
-        acc.X += tcmInfo.accCal.offset[i] + tcmInfo.accCal.cubic[i] * powf(raw_accel[i], 3);
-        acc.Y += tcmInfo.accCal.offset[i] + tcmInfo.accCal.cubic[i] * powf(raw_accel[i], 3);
-        acc.Z += tcmInfo.accCal.offset[i] + tcmInfo.accCal.cubic[i] * powf(raw_accel[i], 3);
-    }
+    // Apply offset and cubic correction
+    acc.x += tcmInfo.accCal.offset[0] + tcmInfo.accCal.cubic[0] * powf(raw[0], 3);
+    acc.y += tcmInfo.accCal.offset[1] + tcmInfo.accCal.cubic[1] * powf(raw[1], 3);
+    acc.z += tcmInfo.accCal.offset[2] + tcmInfo.accCal.cubic[2] * powf(raw[2], 3);
 
-	return acc;
+    return acc;
 }
 
-XYZ calcMag() {
-    float raw_mag[3];
-    float corrected[3];
-    float calibrated[3];
+// ------------------------------
+// Magnetometer Calibration
+// ------------------------------
+XYZ calcMag(void) {
+    float raw[3] = { tcmInfo.raw.mag.x, tcmInfo.raw.mag.y, tcmInfo.raw.mag.z };
+    float corrected[3], calibrated[3];
 
-    // Step 1: load raw magnetometer readings
-    raw_mag[0] = tcmInfo.raw.Mag.X;
-    raw_mag[1] = tcmInfo.raw.Mag.Y;
-    raw_mag[2] = tcmInfo.raw.Mag.Z;
-
-    // Step 2: apply hard-iron offset (bias correction)
+    // Step 1: apply hard-iron offset
     for (int i = 0; i < 3; i++) {
-        corrected[i] = raw_mag[i] + tcmInfo.magCal.hardIron[i];
+        corrected[i] = raw[i] + tcmInfo.magCal.hardIron[i];
     }
 
-    // Step 3: apply soft-iron matrix (3x3 multiply)
+    // Step 2: apply soft-iron correction matrix
     for (int i = 0; i < 3; i++) {
         calibrated[i] = 0.0f;
         for (int j = 0; j < 3; j++) {
@@ -155,165 +143,159 @@ XYZ calcMag() {
         }
     }
 
-    // Step 4: store result
-    XYZ mag = { calibrated[0], calibrated[1], calibrated[2] };
-    return mag;
+    // Step 3: store corrected values
+    return (XYZ) { calibrated[0], calibrated[1], calibrated[2] };
 }
 
-RPY calcRPY() {
-	RPY rpy;
-    // Roll: atan2(accel.Y, accel.Z)
-    rpy.rollRad = atan2f(tcmInfo.scaled.Acc.Y, tcmInfo.scaled.Acc.Z);
+// ------------------------------
+// Roll-Pitch-Yaw Calculation
+// ------------------------------
+RPY calcRPY(void) {
+    RPY rpy;
 
-    // Pitch: atan2(-accel.X, accel.Y * sin(roll) + accel.Z * cos(roll))
-    rpy.pitchRad = atan2f(-tcmInfo.scaled.Acc.X,
-        tcmInfo.scaled.Acc.Y * sinf(rpy.rollRad) + tcmInfo.scaled.Acc.Z * cosf(rpy.rollRad));
+    // Roll: atan2(acc.y, acc.z)
+    rpy.rollRad = atan2f(tcmInfo.scaled.acc.y, tcmInfo.scaled.acc.z);
 
-    // by = mag.Z * sin(roll) - mag.Y * cos(roll)
-    float by = tcmInfo.scaled.Mag.Z * sinf(rpy.rollRad) - tcmInfo.scaled.Mag.Y * cosf(rpy.rollRad);
+    // Pitch: atan2(-acc.x, acc.y*sin(roll) + acc.z*cos(roll))
+    rpy.pitchRad = atan2f(
+        -tcmInfo.scaled.acc.x,
+        tcmInfo.scaled.acc.y * sinf(rpy.rollRad) + tcmInfo.scaled.acc.z * cosf(rpy.rollRad)
+    );
 
-    // bx = mag.X * cos(pitch) + mag.Y * sin(pitch) * sin(roll) + mag.Z * sin(pitch) * cos(roll)
-    float bx = tcmInfo.scaled.Mag.X * cosf(rpy.pitchRad)
-        + tcmInfo.scaled.Mag.Y * sinf(rpy.pitchRad) * sinf(rpy.rollRad)
-        + tcmInfo.scaled.Mag.Z * sinf(rpy.pitchRad) * cosf(rpy.rollRad);
+    // Magnetometer compensation
+    float by = tcmInfo.scaled.mag.z * sinf(rpy.rollRad) - tcmInfo.scaled.mag.y * cosf(rpy.rollRad);
+    float bx = tcmInfo.scaled.mag.x * cosf(rpy.pitchRad)
+        + tcmInfo.scaled.mag.y * sinf(rpy.pitchRad) * sinf(rpy.rollRad)
+        + tcmInfo.scaled.mag.z * sinf(rpy.pitchRad) * cosf(rpy.rollRad);
 
     // Yaw: atan2(by, bx)
     rpy.yawRad = atan2f(by, bx);
 
-	return rpy;
+    return rpy;
 }
 
-float calcHeading() {
-	float result;
-
-    result = tcmInfo.orientation.yawRad * 180 / M_PI;  // Convert to degrees
-    result = fmodf(result + 180.0f + DECLINATION_DEG, 360.0f);
-    if (result < 0.0f) result += 360.0f;
-    result -= 180.0f;
-
-    return result;
+float calcHeading(void) {
+    float heading = tcmInfo.orientation.yawRad * 180.0f / M_PI;
+    heading = fmodf(heading + 180.0f + DECLINATION_DEG, 360.0f);
+    if (heading < 0.0f) heading += 360.0f;
+    return heading - 180.0f;
 }
 
-float speedFromTilt() {
+// ------------------------------
+// Velocity (Placeholder)
+// ------------------------------
+float speedFromTilt(void) {
     ESP_LOGE(TAG, "Speed from tilt not implemented");
-    float result;
-
-    result = 24.7;
-    return result;
+    return 24.7f;
 }
 
-Velocity calcCurrent() {
-    float speed;
-    Velocity result;
-
-    speed = speedFromTilt();
-    result.North = speed * cosf(tcmInfo.headingDeg*M_PI/180.0f);
-    result.East = speed * sinf(tcmInfo.headingDeg*M_PI/180.0f);
-
-    return result;
+Velocity calcCurrent(void) {
+    float speed = speedFromTilt();
+    Velocity vel;
+    vel.north = speed * cosf(tcmInfo.headingDeg * M_PI / 180.0f);
+    vel.east = speed * sinf(tcmInfo.headingDeg * M_PI / 180.0f);
+    return vel;
 }
 
-void calcTcm() {
-    tcmInfo.scaled.Batt = calcBattV();
-    tcmInfo.scaled.Temp = calcTempC();
-    tcmInfo.scaled.Acc = calcAcc();
-    tcmInfo.scaled.Mag = calcMag();
+// ------------------------------
+// Main TCM Calculation
+// ------------------------------
+void calcTcm(void) {
+    tcmInfo.scaled.batt = calcBattV();
+    tcmInfo.scaled.temp = calcTempC();
+    tcmInfo.scaled.acc = calcAcc();
+    tcmInfo.scaled.mag = calcMag();
     tcmInfo.orientation = calcRPY();
     tcmInfo.headingDeg = calcHeading();
     tcmInfo.current = calcCurrent();
 }
 
-void dispTcm() {
-    ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
-	ESP_LOGI(TAG, "Serial Number: %s", tcmInfo.serialNum);
-    ESP_LOGI(TAG, "Battery: %.2f V", tcmInfo.scaled.Batt);
-    ESP_LOGI(TAG, "Temperature: %.2f C", tcmInfo.scaled.Temp);
-    ESP_LOGI(TAG, "Acceleration(g): X=%.2f Y=%.2f Z=%.2f", 
-        tcmInfo.scaled.Acc.X, tcmInfo.scaled.Acc.Y, tcmInfo.scaled.Acc.Z);
-    ESP_LOGI(TAG, "Magnetometer(mG): X=%.2f Y=%.2f Z=%.2f",
-        tcmInfo.scaled.Mag.X, tcmInfo.scaled.Mag.Y, tcmInfo.scaled.Mag.Z);
-    ESP_LOGI(TAG, "Orientation(rad): Roll=%.2f Pitch=%.2f Yaw=%.2f",
-        tcmInfo.orientation.rollRad, tcmInfo.orientation.pitchRad, tcmInfo.orientation.yawRad);
-    ESP_LOGI(TAG, "Heading(deg): %.2f", tcmInfo.headingDeg);
-    ESP_LOGI(TAG, "Current Velocity(?): North=%.2f East=%.2f",
-        tcmInfo.current.North, tcmInfo.current.East);
+// ------------------------------
+// Averaging
+// ------------------------------
+void addRaws(void) {
+    tcmAvg.rawSum.acc.x += tcmInfo.raw.acc.x;
+    tcmAvg.rawSum.acc.y += tcmInfo.raw.acc.y;
+    tcmAvg.rawSum.acc.z += tcmInfo.raw.acc.z;
+
+    tcmAvg.rawSum.mag.x += tcmInfo.raw.mag.x;
+    tcmAvg.rawSum.mag.y += tcmInfo.raw.mag.y;
+    tcmAvg.rawSum.mag.z += tcmInfo.raw.mag.z;
+
+    tcmAvg.rawSum.temp += tcmInfo.raw.temp;
+    tcmAvg.rawSum.batt += tcmInfo.raw.batt;
 }
 
-void addRaws() {
-    tcmAvg.rawSum.Acc.X += tcmInfo.raw.Acc.X;
-    tcmAvg.rawSum.Acc.Y += tcmInfo.raw.Acc.Y;
-    tcmAvg.rawSum.Acc.Z += tcmInfo.raw.Acc.Z;
-    tcmAvg.rawSum.Mag.X += tcmInfo.raw.Mag.X;
-    tcmAvg.rawSum.Mag.Y += tcmInfo.raw.Mag.Y;
-    tcmAvg.rawSum.Mag.Z += tcmInfo.raw.Mag.Z;
-    tcmAvg.rawSum.Temp += tcmInfo.raw.Temp;
-    tcmAvg.rawSum.Batt += tcmInfo.raw.Batt;
+void calcAndCopyAverages(void) {
+    tcmInfo.raw.acc.x = tcmAvg.rawSum.acc.x / tcmAvg.sampleCount;
+    tcmInfo.raw.acc.y = tcmAvg.rawSum.acc.y / tcmAvg.sampleCount;
+    tcmInfo.raw.acc.z = tcmAvg.rawSum.acc.z / tcmAvg.sampleCount;
+
+    tcmInfo.raw.mag.x = tcmAvg.rawSum.mag.x / tcmAvg.sampleCount;
+    tcmInfo.raw.mag.y = tcmAvg.rawSum.mag.y / tcmAvg.sampleCount;
+    tcmInfo.raw.mag.z = tcmAvg.rawSum.mag.z / tcmAvg.sampleCount;
+
+    tcmInfo.raw.temp = tcmAvg.rawSum.temp / tcmAvg.sampleCount;
+    tcmInfo.raw.batt = tcmAvg.rawSum.batt / tcmAvg.sampleCount;
 }
 
-void calcAndCopyAverages() {
-	// Calculate averages and copy to tcmInfo
-    tcmInfo.raw.Acc.X = tcmAvg.rawSum.Acc.X / tcmAvg.sampleCount;
-    tcmInfo.raw.Acc.Y = tcmAvg.rawSum.Acc.Y / tcmAvg.sampleCount;
-    tcmInfo.raw.Acc.Z = tcmAvg.rawSum.Acc.Z / tcmAvg.sampleCount;
-    tcmInfo.raw.Mag.X = tcmAvg.rawSum.Mag.X / tcmAvg.sampleCount;
-    tcmInfo.raw.Mag.Y = tcmAvg.rawSum.Mag.Y / tcmAvg.sampleCount;
-    tcmInfo.raw.Mag.Z = tcmAvg.rawSum.Mag.Z / tcmAvg.sampleCount;
-    tcmInfo.raw.Temp = tcmAvg.rawSum.Temp / tcmAvg.sampleCount;
-    tcmInfo.raw.Batt = tcmAvg.rawSum.Batt / tcmAvg.sampleCount;
-}
-
-void resetAverges() {
-    tcmAvg.rawSum.Acc = (XYZ){0.0f, 0.0f, 0.0f};
-    tcmAvg.rawSum.Mag = (XYZ){0.0f, 0.0f, 0.0f};
-    tcmAvg.rawSum.Temp = 0.0f;
-    tcmAvg.rawSum.Batt = 0.0f;
+void resetAverages(void) {
+    tcmAvg.rawSum = (Sensors){ {0,0,0}, {0,0,0}, 0.0f, 0.0f };
     tcmAvg.sampleCount = 0;
 }
 
-void tcmAlgo() {
-    /*
-      Due to vortex induced oscillations and turbulence,
-      we recommend taking 8 samples per second for at least 20 seconds
-      and averaging the accelerometer and magnetometer values
-      and converting to one speed and direction measurement.
-      That is faster than you will be able to sample over the virtual comm port,
-      but you can sample at a slower rate for a longer time and get a similar result.
-    */
+// ------------------------------
+// TCM Algorithm
+// ------------------------------
+void dispTcm() {
+    ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
+    ESP_LOGI(TAG, "Serial Number: %s", tcmInfo.serialNum);
+    ESP_LOGI(TAG, "Battery: %.2f V", tcmInfo.scaled.batt);
+    ESP_LOGI(TAG, "Temperature: %.2f C", tcmInfo.scaled.temp);
+    ESP_LOGI(TAG, "Acceleration (g): X=%.2f Y=%.2f Z=%.2f",
+        tcmInfo.scaled.acc.x, tcmInfo.scaled.acc.y, tcmInfo.scaled.acc.z);
+    ESP_LOGI(TAG, "Magnetometer (mG): X=%.2f Y=%.2f Z=%.2f",
+        tcmInfo.scaled.mag.x, tcmInfo.scaled.mag.y, tcmInfo.scaled.mag.z);
+    ESP_LOGI(TAG, "Orientation (rad): Roll=%.2f Pitch=%.2f Yaw=%.2f",
+        tcmInfo.orientation.rollRad, tcmInfo.orientation.pitchRad, tcmInfo.orientation.yawRad);
+    ESP_LOGI(TAG, "Heading (deg): %.2f", tcmInfo.headingDeg);
+    ESP_LOGI(TAG, "Current Velocity: North=%.2f East=%.2f",
+        tcmInfo.current.north, tcmInfo.current.east);
+}
+
+void tcmAlgo(void) {
     if (tcmAvg.sampleCount < NUM_ITERATIONS_TO_AVERAGE) {
         ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
         addRaws();
         tcmAvg.sampleCount++;
     }
+
     if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
         ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
-		calcAndCopyAverages();
-        // Recalculate values based on averaged raw values
+        calcAndCopyAverages();
         calcTcm();
         dispTcm();
-        // Reset for next averaging cycle
-        resetAverges();
-        return;
-	}
+        resetAverages();
+    }
 }
 
-void initTcm() {
+// ------------------------------
+// Initialization and Run
+// ------------------------------
+void initTcm(void) {
     esp_log_level_set(TAG, ESP_LOG_INFO);
-    resetAverges();
+    resetAverages();
     getCalibrations();
-
-	ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
-	ESP_LOGI(TAG, "TCM Initialized");
+    ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
+    ESP_LOGI(TAG, "TCM Initialized");
 }
 
-void runTcm() {
+void runTcm(void) {
     if (!getRaws()) {
         ESP_LOGE(TAG, "Failed to get raw sensor data");
         return;
     }
-    else {
-        calcTcm();
-		dispTcm();
-		tcmAlgo();
-    }
+    calcTcm();
+    dispTcm();
+    tcmAlgo();
 }
-

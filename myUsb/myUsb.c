@@ -1,15 +1,29 @@
-﻿#include <stdio.h>
+﻿// ------------------------------
+// Standard C Library
+// ------------------------------
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "esp_log.h"
-#include "esp_err.h"
+#include <math.h>
+
+// ------------------------------
+// FreeRTOS Headers
+// ------------------------------
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+// ------------------------------
+// ESP-IDF Headers
+// ------------------------------
+#include "esp_log.h"
+#include "esp_err.h"
 #include "usb/usb_host.h"
 #include "usb/cdc_acm_host.h"
 #include "usb/usb_types_ch9.h"
 
+// ------------------------------
+// Project Headers
+// ------------------------------
 #include "myUsb.h"
 #include "myTcm.h"
 #include "WRCDefs.h"
