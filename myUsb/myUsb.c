@@ -69,14 +69,16 @@ static uint8_t hex_to_byte(const char* hex)
     return (uint8_t)strtol(buf, NULL, 16);
 }
 
+// Decode GSR ASCII string into individual variables
 int decode_gsr_values(const char* response,
-    int16_t* temperature, int16_t* ax, int16_t* ay, int16_t* az,
-    int16_t* mx, int16_t* my, int16_t* mz,
-    int16_t* battery, int16_t* pressure, int16_t* light)
+    uint16_t* temperature,     // Unsigned ADC
+    int16_t* ax, int16_t* ay, int16_t* az,  // Signed accel
+    int16_t* mx, int16_t* my, int16_t* mz,  // Signed mag
+    uint16_t* battery)          // Unsigned ADC
 {
     if (!response) return -1;
 
-    // Skip "GSR" or any spaces
+    // Skip optional "GSR" and whitespace/colon
     const char* p = strstr(response, "GSR");
     if (p) {
         p += 3;
@@ -86,19 +88,30 @@ int decode_gsr_values(const char* response,
         p = response;
     }
 
-    // Each channel is 4 ASCII hex chars → 2 bytes
-    int16_t* vars[10] = { temperature, ax, ay, az, mx, my, mz, battery, pressure, light };
+    // There should be at least 40 ASCII hex chars (20 bytes)
+    size_t len = strlen(p);
+    if (len < 40) return -2;
 
+    // Decode 10 channels (each 4 hex chars = 2 bytes)
+    uint16_t raw[10];
     for (int i = 0; i < 10; i++) {
         uint8_t lo = hex_to_byte(p + i * 4);
         uint8_t hi = hex_to_byte(p + i * 4 + 2);
-        if (vars[i])
-            *vars[i] = (int16_t)((hi << 8) | lo);
+        raw[i] = (uint16_t)((hi << 8) | lo);
     }
+
+    // Assign to correct types
+    if (temperature) *temperature = raw[0];
+    if (ax) *ax = (int16_t)raw[1];
+    if (ay) *ay = (int16_t)raw[2];
+    if (az) *az = (int16_t)raw[3];
+    if (mx) *mx = (int16_t)raw[4];
+    if (my) *my = (int16_t)raw[5];
+    if (mz) *mz = (int16_t)raw[6];
+    if (battery) *battery = raw[7];
 
     return 0;
 }
-
 void parse_response(const uint8_t* data, size_t data_len) {
     // Firmware version
     const char* fw_start = strstr((const char*)data, FIRMWARE_VERSION_CMD);
@@ -151,24 +164,30 @@ void parse_response(const uint8_t* data, size_t data_len) {
             else {
                 ESP_LOGV(TAG, "String:");
                 ESP_LOG_BUFFER_HEXDUMP(TAG, sr_start, sr_end - sr_start, ESP_LOG_VERBOSE);
-				int16_t temperature, ax, ay, az, mx, my, mz, battery, pressure, light;
+                uint16_t temperature, battery;
+                int16_t ax, ay, az, mx, my, mz;
                 if (decode_gsr_values(sr_start,
                     &temperature, &ax, &ay, &az,
                     &mx, &my, &mz,
-                    &battery, &pressure, &light) == 0) {
-                    tcmInfo.raw.temp = (float)temperature;
-                    tcmInfo.raw.acc.x = (float)ax;
-                    tcmInfo.raw.acc.y = (float)ay;
-                    tcmInfo.raw.acc.z = (float)az;
-                    tcmInfo.raw.mag.x = (float)mx;
-                    tcmInfo.raw.mag.y = (float)my;
-                    tcmInfo.raw.mag.z = (float)mz;
-                    tcmInfo.raw.batt = (float)battery;
+                    &battery) == 0) {
+                    tcmInfo.raw.temp = temperature;
+                    tcmInfo.raw.acc.x = ax;
+                    tcmInfo.raw.acc.y = ay;
+                    tcmInfo.raw.acc.z = az;
+                    tcmInfo.raw.mag.x = mx;
+                    tcmInfo.raw.mag.y = my;
+                    tcmInfo.raw.mag.z = mz;
+                    tcmInfo.raw.batt  = battery;
                     ESP_LOGI(TAG, "Parsed Sensor Readings:");
                     ESP_LOGI(TAG, "  Temperature: %d", temperature);
+					ESP_LOGI(TAG, "  Temperature: %x", temperature);
                     ESP_LOGI(TAG, "  Acceleration: X=%d Y=%d Z=%d", ax, ay, az);
+                    ESP_LOGI(TAG, "  Acceleration: X=%x Y=%x Z=%x", ax, ay, az);
                     ESP_LOGI(TAG, "  Magnetometer: X=%d Y=%d Z=%d", mx, my, mz);
+                    ESP_LOGI(TAG, "  Magnetometer: X=%x Y=%x Z=%x", mx, my, mz);
                     ESP_LOGI(TAG, "  Battery: %d mV", battery);
+                    ESP_LOGI(TAG, "  Battery: %x mV", battery);
+
                 }
                 else {
                     ESP_LOGE(TAG, "Failed to decode sensor readings");
@@ -491,7 +510,7 @@ void initUsb(void)
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, ESP_LOG_WARN);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,

@@ -13,6 +13,12 @@ typedef struct {
 } XYZ;
 
 typedef struct {
+    int16_t x;
+    int16_t y;
+    int16_t z;
+} rawXYZ;
+
+typedef struct {
     float gain[3][3];   // 3x3 gain matrix
     float offset[3];    // 3x1 offset vector
     float cubic[3];     // 3x1 cubic correction
@@ -29,6 +35,13 @@ typedef struct {
     float temp;
     float batt;
 } Sensors;
+
+typedef struct {
+    rawXYZ acc;
+    rawXYZ mag;
+    uint16_t temp;
+    uint16_t batt;
+} rawSensors;
 
 typedef struct {
     float rollRad;
@@ -53,7 +66,7 @@ typedef struct {
 typedef struct {
     char version[12];
     char serialNum[12];
-    Sensors raw;
+    rawSensors raw;
     Sensors scaled;
     TempCalCoef tempCal;
     CubicMagnetometer magCal;

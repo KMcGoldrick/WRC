@@ -50,9 +50,9 @@ bool getRaws(void) {
     ESP_LOGE(TAG, "Get raw sensor data not implemented");
 
     tcmInfo.raw.batt = 3700;      // mV
-    tcmInfo.raw.temp = 2500.0f;   // Raw temperature
-    tcmInfo.raw.acc = (XYZ){ 512.0f, 0.0f, -512.0f };
-    tcmInfo.raw.mag = (XYZ){ 100.0f, 200.0f, -50.0f };
+    tcmInfo.raw.temp = 2500;      // Raw temperature
+    tcmInfo.raw.acc = (rawXYZ){ 512, 0, 512 };
+    tcmInfo.raw.mag = (rawXYZ){ 100, 200, -50 };
 
     return true;
 }
@@ -60,41 +60,41 @@ bool getRaws(void) {
 // ------------------------------
 // Temperature and Battery
 // ------------------------------
-float calcTempC(void) {
-    if (tcmInfo.tempCal.TMR == 0) {
+float calcTempC(void)
+{
+    if (tcmInfo.tempCal.TMR == 0.0f) {
         ESP_LOGE(TAG, "Calibration error: TMR is zero");
         return ZERO_KELVIN;
     }
 
-    if (tcmInfo.raw.temp < 0.0f || tcmInfo.raw.temp >= MAX_INT16) {
-        ESP_LOGE(TAG, "Raw temperature out of range: %.2f", tcmInfo.raw.temp);
-        return ZERO_KELVIN;
-    }
-
-    float denom_temp = MAX_INT16 - tcmInfo.raw.temp;
+    float denom_temp = (65535.0f - (float)tcmInfo.raw.temp);
     if (denom_temp == 0.0f) {
         ESP_LOGE(TAG, "Division by zero in temperature calculation");
         return ZERO_KELVIN;
     }
 
-    float temp = (tcmInfo.raw.temp * tcmInfo.tempCal.TMR) / denom_temp;
-    if (temp <= 0.0f) {
-        ESP_LOGE(TAG, "Log of non-positive value: temp=%.6f", temp);
+    float R = (tcmInfo.raw.temp * tcmInfo.tempCal.TMR) / denom_temp;
+    if (R <= 0.0f) {
+        ESP_LOGE(TAG, "Invalid resistance ratio (R <= 0): %.6f", R);
         return ZERO_KELVIN;
     }
 
-    float log_temp = logf(temp);
-    float denom = tcmInfo.tempCal.TMA +
-        tcmInfo.tempCal.TMB * log_temp +
-        tcmInfo.tempCal.TMD * log_temp * log_temp +
-        tcmInfo.tempCal.TMC * log_temp * log_temp * log_temp;
+    float logR = logf(R);
+
+    float denom = tcmInfo.tempCal.TMA
+        + tcmInfo.tempCal.TMB * logR
+        + tcmInfo.tempCal.TMD * logR * logR
+        + tcmInfo.tempCal.TMC * logR * logR * logR;
 
     if (denom == 0.0f) {
-        ESP_LOGE(TAG, "Final denominator is zero in temperature calculation");
+        ESP_LOGE(TAG, "Final denominator zero in temperature calculation");
         return ZERO_KELVIN;
     }
 
-    return 1.0f / denom + ZERO_KELVIN;
+    float tempK = 1.0f / denom;       // Kelvin
+    float tempC = tempK - ZERO_KELVIN; // Convert to °C
+
+    return tempC;
 }
 
 float calcBattV(void) {
