@@ -55,8 +55,8 @@ typedef struct {
 } Velocity;
 
 typedef struct {
-    int TMO;
-    int TMR;
+    float TMO;
+    float TMR;
     float TMA;
     float TMB;
     float TMC;

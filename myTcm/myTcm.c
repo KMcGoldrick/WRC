@@ -30,7 +30,7 @@ TcmAverage tcmAvg;
 bool getCalibrations(void) {
     ESP_LOGE(TAG, "Get calibrations not implemented");
 
-    tcmInfo.tempCal = (TempCalCoef){ 0, 10000, 0.0011238100354f, 0.0002349457073f, 0.0000000848361f, 0.0f };
+    tcmInfo.tempCal = (TempCalCoef){ 0.0f, 10000.0f, 0.0011238100354f, 0.0002349457073f, 0.0000000848361f, 0.0f };
     tcmInfo.accCal = (CubicAccelerometer){
         .gain = { {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} },
         .offset = { 0.0f, 0.0f, 0.0f },
@@ -62,37 +62,41 @@ bool getRaws(void) {
 // ------------------------------
 float calcTempC(void)
 {
+    // Ensure calibration TMR is non-zero
     if (tcmInfo.tempCal.TMR == 0.0f) {
         ESP_LOGE(TAG, "Calibration error: TMR is zero");
-        return ZERO_KELVIN;
+        return -273.15f; // Return absolute zero on error
     }
 
-    float denom_temp = (65535.0f - (float)tcmInfo.raw.temp);
+    // Compute resistance ratio
+    float raw = (float)tcmInfo.raw.temp;
+    float denom_temp = (65535.0f - raw);
     if (denom_temp == 0.0f) {
-        ESP_LOGE(TAG, "Division by zero in temperature calculation");
-        return ZERO_KELVIN;
+        ESP_LOGE(TAG, "Division by zero in resistance calculation");
+        return -273.15f;
     }
 
-    float R = (tcmInfo.raw.temp * tcmInfo.tempCal.TMR) / denom_temp;
+    float R = (raw * tcmInfo.tempCal.TMR) / denom_temp;
     if (R <= 0.0f) {
-        ESP_LOGE(TAG, "Invalid resistance ratio (R <= 0): %.6f", R);
-        return ZERO_KELVIN;
+        ESP_LOGE(TAG, "Invalid resistance ratio R <= 0");
+        return -273.15f;
     }
 
     float logR = logf(R);
 
+    // Steinhart-Hart formula: 1/T = A + B*ln(R) + C*(ln(R))^2 + D*(ln(R))^3
     float denom = tcmInfo.tempCal.TMA
         + tcmInfo.tempCal.TMB * logR
-        + tcmInfo.tempCal.TMD * logR * logR
-        + tcmInfo.tempCal.TMC * logR * logR * logR;
+        + tcmInfo.tempCal.TMC * logR * logR
+        + tcmInfo.tempCal.TMD * logR * logR * logR;
 
     if (denom == 0.0f) {
-        ESP_LOGE(TAG, "Final denominator zero in temperature calculation");
-        return ZERO_KELVIN;
+        ESP_LOGE(TAG, "Denominator zero in temperature calculation");
+        return -273.15f;
     }
 
-    float tempK = 1.0f / denom;       // Kelvin
-    float tempC = tempK - ZERO_KELVIN; // Convert to °C
+    float tempK = 1.0f / denom;       // Temperature in Kelvin
+    float tempC = tempK - 273.15f;    // Convert to °C
 
     return tempC;
 }
