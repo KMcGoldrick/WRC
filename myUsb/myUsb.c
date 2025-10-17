@@ -38,6 +38,7 @@ bool usb_host_initialized = false;
 
 bool get_version = true;
 bool get_serialNum = true;
+bool get_calibrations = true;
 bool get_sensor_readings = false;
 
 // Handle to TCM device
@@ -148,8 +149,8 @@ void parse_response(const uint8_t* data, size_t data_len) {
                 return;
             }
             else {
-                ESP_LOGI(TAG, "String:");
-                ESP_LOG_BUFFER_HEXDUMP(TAG, sr_start, sr_end - sr_start, ESP_LOG_INFO);
+                ESP_LOGV(TAG, "String:");
+                ESP_LOG_BUFFER_HEXDUMP(TAG, sr_start, sr_end - sr_start, ESP_LOG_VERBOSE);
 				int16_t temperature, ax, ay, az, mx, my, mz, battery, pressure, light;
                 if (decode_gsr_values(sr_start,
                     &temperature, &ax, &ay, &az,
@@ -177,6 +178,15 @@ void parse_response(const uint8_t* data, size_t data_len) {
 
             get_sensor_readings = false;
     }
+
+    // Calibrations
+    const char* cal_start = strstr((const char*)data, CALIBRATION_CMD);
+    if (cal_start) {
+        get_calibrations = false;
+        ESP_LOGI(TAG, "Calibration data received");
+        // Parsing calibration data can be implemented here
+    }
+
 }
 
 void handle_rx(uint8_t* data, size_t data_len, void* user_arg)
@@ -448,11 +458,17 @@ void usb_client_task(void* arg)
             }
         }
         else {
-			if (get_version){
+            if (false) {
+				send_command(RESET_CMD);
+            }
+			else if (get_version){
 				send_command(FIRMWARE_VERSION_CMD);
 			}
 			else if (get_serialNum) {
 				send_command(SERIAL_NUMBER_CMD);
+			}
+			else if (get_calibrations) {
+				send_command(CALIBRATION_CMD);
 			}
             else if (get_sensor_readings) {
                 send_command(SENSOR_READINGS_CMD);
