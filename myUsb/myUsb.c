@@ -38,7 +38,7 @@ bool usb_host_initialized = false;
 
 bool get_version = true;
 bool get_serialNum = true;
-bool get_sensor_readings = true;
+bool get_sensor_readings = false;
 
 // Handle to TCM device
 usb_device_handle_t TCMdev_hdl = NULL;
@@ -55,6 +55,47 @@ usb_host_client_handle_t client_hdl = NULL;
 void readSensors(void)
 {
     get_sensor_readings = true;
+}
+
+bool areSensorsReady(void)
+{
+    return !get_sensor_readings;
+}
+
+static uint8_t hex_to_byte(const char* hex)
+{
+    char buf[3] = { hex[0], hex[1], 0 };
+    return (uint8_t)strtol(buf, NULL, 16);
+}
+
+int decode_gsr_values(const char* response,
+    int16_t* temperature, int16_t* ax, int16_t* ay, int16_t* az,
+    int16_t* mx, int16_t* my, int16_t* mz,
+    int16_t* battery, int16_t* pressure, int16_t* light)
+{
+    if (!response) return -1;
+
+    // Skip "GSR" or any spaces
+    const char* p = strstr(response, "GSR");
+    if (p) {
+        p += 3;
+        while (*p == ' ' || *p == ':') p++;
+    }
+    else {
+        p = response;
+    }
+
+    // Each channel is 4 ASCII hex chars → 2 bytes
+    int16_t* vars[10] = { temperature, ax, ay, az, mx, my, mz, battery, pressure, light };
+
+    for (int i = 0; i < 10; i++) {
+        uint8_t lo = hex_to_byte(p + i * 4);
+        uint8_t hi = hex_to_byte(p + i * 4 + 2);
+        if (vars[i])
+            *vars[i] = (int16_t)((hi << 8) | lo);
+    }
+
+    return 0;
 }
 
 void parse_response(const uint8_t* data, size_t data_len) {
@@ -109,6 +150,28 @@ void parse_response(const uint8_t* data, size_t data_len) {
             else {
                 ESP_LOGI(TAG, "String:");
                 ESP_LOG_BUFFER_HEXDUMP(TAG, sr_start, sr_end - sr_start, ESP_LOG_INFO);
+				int16_t temperature, ax, ay, az, mx, my, mz, battery, pressure, light;
+                if (decode_gsr_values(sr_start,
+                    &temperature, &ax, &ay, &az,
+                    &mx, &my, &mz,
+                    &battery, &pressure, &light) == 0) {
+                    tcmInfo.raw.temp = (float)temperature;
+                    tcmInfo.raw.acc.x = (float)ax;
+                    tcmInfo.raw.acc.y = (float)ay;
+                    tcmInfo.raw.acc.z = (float)az;
+                    tcmInfo.raw.mag.x = (float)mx;
+                    tcmInfo.raw.mag.y = (float)my;
+                    tcmInfo.raw.mag.z = (float)mz;
+                    tcmInfo.raw.batt = (float)battery;
+                    ESP_LOGI(TAG, "Parsed Sensor Readings:");
+                    ESP_LOGI(TAG, "  Temperature: %d", temperature);
+                    ESP_LOGI(TAG, "  Acceleration: X=%d Y=%d Z=%d", ax, ay, az);
+                    ESP_LOGI(TAG, "  Magnetometer: X=%d Y=%d Z=%d", mx, my, mz);
+                    ESP_LOGI(TAG, "  Battery: %d mV", battery);
+                }
+                else {
+                    ESP_LOGE(TAG, "Failed to decode sensor readings");
+				}
             }
 
 
@@ -151,7 +214,7 @@ bool enumerate_TCM_device(void)
     }
 
     if (addr_count == 0) {
-        ESP_LOGI(TAG, "No USB devices found");
+        ESP_LOGE(TAG, "No USB devices found");
         return false;
     }
 
@@ -402,7 +465,17 @@ void usb_client_task(void* arg)
 
 void initUsb(void)
 {
-    esp_log_level_set(TAG, ESP_LOG_INFO);
+    /*
+    * Levels available:
+        •	ESP_LOG_NONE
+        •	ESP_LOG_ERROR
+        •	ESP_LOG_WARN
+        •	ESP_LOG_INFO
+        •	ESP_LOG_DEBUG
+        •	ESP_LOG_VERBOSE
+        hint: Run idf.py menuconfig, can set the default log level
+    */
+    esp_log_level_set(TAG, ESP_LOG_WARN);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,

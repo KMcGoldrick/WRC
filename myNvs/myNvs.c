@@ -123,7 +123,17 @@ void appendNvsLog(const char* data) {
 }
 
 void initNvsLog(bool erase, bool printLog) {
-    esp_log_level_set(TAG, ESP_LOG_INFO);
+    /*
+    * Levels available:
+        •	ESP_LOG_NONE
+        •	ESP_LOG_ERROR
+        •	ESP_LOG_WARN
+        •	ESP_LOG_INFO
+        •	ESP_LOG_DEBUG
+        •	ESP_LOG_VERBOSE
+        hint: Run idf.py menuconfig, can set the default log level
+    */
+    esp_log_level_set(TAG, ESP_LOG_WARN);
     esp_err_t err = nvs_flash_init();
     if (erase || err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         nvs_flash_erase();

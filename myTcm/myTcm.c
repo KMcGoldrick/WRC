@@ -283,19 +283,31 @@ void tcmAlgo(void) {
 // Initialization and Run
 // ------------------------------
 void initTcm(void) {
+    /*
+    * Levels available:
+        •	ESP_LOG_NONE
+        •	ESP_LOG_ERROR
+        •	ESP_LOG_WARN
+        •	ESP_LOG_INFO
+        •	ESP_LOG_DEBUG
+        •	ESP_LOG_VERBOSE
+        hint: Run idf.py menuconfig, can set the default log level
+    */
     esp_log_level_set(TAG, ESP_LOG_INFO);
     resetAverages();
     getCalibrations();
-    ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
+	readSensors();
     ESP_LOGI(TAG, "TCM Initialized");
 }
 
-void runTcm(void) {
-    if (!getRaws()) {
-        ESP_LOGE(TAG, "Failed to get raw sensor data");
+void runTcm(void) 
+{
+    if (!areSensorsReady()) {
+        ESP_LOGI(TAG, "Sensors are not ready");
         return;
     }
     calcTcm();
     dispTcm();
     tcmAlgo();
+	readSensors();
 }
