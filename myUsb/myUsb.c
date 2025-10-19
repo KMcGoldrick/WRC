@@ -132,24 +132,66 @@ esp_err_t send_command(const char* cmd)
     return err;
 }
 
-bool check_and_send_next_calibration(const uint8_t* data, const char* keyword, const char* next_calib_addr)
+float decode_tcm_ascii_float(const uint8_t* ascii_bytes)
+{
+    uint32_t val = 0;
+    val |= ((ascii_bytes[0] - 0x20) << 24);
+    val |= ((ascii_bytes[1] - 0x20) << 16);
+    val |= ((ascii_bytes[2] - 0x20) << 8);
+    val |= ((ascii_bytes[3] - 0x20) << 0);
+    float f;
+    memcpy(&f, &val, sizeof(f));
+    return f;
+}
+
+bool parse_float_value(const uint8_t* data, const char* keyword, float* save_to)
+{
+    if (!data || !save_to || !keyword) return false;
+
+    const char* p = strstr((const char*)data, keyword);
+    if (!p) return false;
+
+    // The float is 4 ASCII bytes immediately after the keyword (skip space if present)
+    const uint8_t* float_bytes = (const uint8_t*)(p + strlen(keyword));
+    if (*float_bytes == ' ') float_bytes++;  // skip space if TCM adds one
+
+    *save_to = decode_tcm_ascii_float(float_bytes);
+
+    ESP_LOGI(TAG, "Parsed %s float value: %f", keyword, *save_to);
+    return true;
+}
+
+bool check_send_next(const uint8_t* data, const char* keyword, const char* next_calib_addr, float* save_to)
 {
     if (!data || !keyword || !next_calib_addr) {
-        ESP_LOGW(TAG, "check_and_send_next_calibration: null argument");
+        ESP_LOGW(TAG, "check_send_next: null argument");
         return false;
     }
 
-    const char* p = strstr((const char*)data, keyword);
-	if (p) {
-        ESP_LOGI(TAG, "Parsed %s", keyword);
-        if (strcmp(keyword, "HSE") != 0) {
-            char calib_cmd[32];
-            snprintf(calib_cmd, sizeof(calib_cmd), "%s %s", CALIBRATION_CMD, next_calib_addr);
-            send_command(calib_cmd);
+	// Check if keyword is present in data
+    if (strstr((const char*)data, keyword) == NULL) {
+        return false;
+	}
+
+    // Parse float if requested
+    if (save_to != NULL)
+    {
+        if (!parse_float_value(data, keyword, save_to)) {
+            ESP_LOGW(TAG, "Could not parse value for %s", keyword);
         }
-		return true;
     }
-    return false;
+
+    ESP_LOGI(TAG, "Parsed %s", keyword);
+
+    // Send next calibration command, except for HSE
+    if (strcmp(keyword, "HSE") != 0) {
+        char calib_cmd[32];
+        snprintf(calib_cmd, sizeof(calib_cmd), "%s %s", CALIBRATION_CMD, next_calib_addr);
+        ESP_LOGV(TAG, "Sending command: %s", calib_cmd);
+        send_command(calib_cmd);
+    }
+
+    return true;
 }
 
 void parse_response(const uint8_t* data, size_t data_len) {
@@ -247,51 +289,52 @@ void parse_response(const uint8_t* data, size_t data_len) {
         else {
             ESP_LOGV(TAG, "String:");
             ESP_LOG_BUFFER_HEXDUMP(TAG, cal_start, cal_end - cal_start, ESP_LOG_VERBOSE);
-			if (check_and_send_next_calibration(data, "HSSRVN", "06080008")) return;
-            if (check_and_send_next_calibration(data, "TMO", "06100008")) { return; }
-            if (check_and_send_next_calibration(data, "TMR", "06180008")) { return; }
-			if (check_and_send_next_calibration(data, "TMA", "06200008")) { return; }
-			if (check_and_send_next_calibration(data, "TMB", "06280008")) { return; }
-            if (check_and_send_next_calibration(data, "TMC", "06300008")) { return; }
-			if (check_and_send_next_calibration(data, "AXX", "06380008")) { return; }
-			if (check_and_send_next_calibration(data, "AXY", "06400008")) { return; }
-			if (check_and_send_next_calibration(data, "AXZ", "06480008")) { return; }
-            if (check_and_send_next_calibration(data, "AYX", "06500008")) { return; }
-            if (check_and_send_next_calibration(data, "AYY", "06580008")) { return; }
-            if (check_and_send_next_calibration(data, "AYZ", "06600008")) { return; }
-            if (check_and_send_next_calibration(data, "AZX", "06680008")) { return; }
-            if (check_and_send_next_calibration(data, "AZY", "06700008")) { return; }
-            if (check_and_send_next_calibration(data, "AZZ", "06780008")) { return; }
-            if (check_and_send_next_calibration(data, "AXV", "06800008")) { return; }
-            if (check_and_send_next_calibration(data, "AYV", "06880008")) { return; }
-            if (check_and_send_next_calibration(data, "AZV", "06900008")) { return; }
-            if (check_and_send_next_calibration(data, "AXC", "06980008")) { return; }
-            if (check_and_send_next_calibration(data, "AYC", "06A00008")) { return; }
-            if (check_and_send_next_calibration(data, "AZC", "06A80008")) { return; }
-            if (check_and_send_next_calibration(data, "MXX", "06B00008")) { return; }
-            if (check_and_send_next_calibration(data, "MXY", "06B80008")) { return; }
-            if (check_and_send_next_calibration(data, "MXZ", "06C00008")) { return; }
-            if (check_and_send_next_calibration(data, "MYX", "06C80008")) { return; }
-            if (check_and_send_next_calibration(data, "MYY", "06D00008")) { return; }
-            if (check_and_send_next_calibration(data, "MYZ", "06D80008")) { return; }
-            if (check_and_send_next_calibration(data, "MZX", "06E00008")) { return; }
-            if (check_and_send_next_calibration(data, "MZY", "06E80008")) { return; }
-            if (check_and_send_next_calibration(data, "MZZ", "06F00008")) { return; }
-            if (check_and_send_next_calibration(data, "MXV", "06F80008")) { return; }
-            if (check_and_send_next_calibration(data, "MYV", "06000108")) { return; }
-            if (check_and_send_next_calibration(data, "MZV", "06080108")) { return; }
-            if (check_and_send_next_calibration(data, "MRF", "06100108")) { return; }
-            if (check_and_send_next_calibration(data, "TMX", "06180108")) { return; }
-            if (check_and_send_next_calibration(data, "TMY", "06200108")) { return; }
-            if (check_and_send_next_calibration(data, "TMZ", "06280108")) { return; }
-            if (check_and_send_next_calibration(data, "TMX", "06300108")) { return; }
-            if (check_and_send_next_calibration(data, "TMY", "06380108")) { return; }
-            if (check_and_send_next_calibration(data, "TMZ", "06400108")) { return; }
-            if (check_and_send_next_calibration(data, "HSE", "06480108")) {}
-
-            get_calibrations = false;
-			ESP_LOGI(TAG, "All calibrations parsed");
-            return;
+            if (check_send_next(data, "HSSRVN", "06080008", NULL)) { return; }
+            if (check_send_next(data, "TMO", "06100008",&tcmInfo.tempCal.TMO)) { return; }
+            if (check_send_next(data, "TMR", "06180008",&tcmInfo.tempCal.TMR)) { return; }
+			if (check_send_next(data, "TMA", "06200008",&tcmInfo.tempCal.TMA)) { return; }
+			if (check_send_next(data, "TMB", "06280008",&tcmInfo.tempCal.TMB)) { return; }
+            if (check_send_next(data, "TMC", "06300008",&tcmInfo.tempCal.TMC)) { return; }
+			if (check_send_next(data, "AXX", "06380008",&tcmInfo.accCal.AXX)) { return; }
+			if (check_send_next(data, "AXY", "06400008",&tcmInfo.accCal.AXY)) { return; }
+			if (check_send_next(data, "AXZ", "06480008",&tcmInfo.accCal.AXZ)) { return; }
+            if (check_send_next(data, "AYX", "06500008",&tcmInfo.accCal.AYX)) { return; }
+            if (check_send_next(data, "AYY", "06580008",&tcmInfo.accCal.AYY)) { return; }
+            if (check_send_next(data, "AYZ", "06600008",&tcmInfo.accCal.AYZ)) { return; }
+            if (check_send_next(data, "AZX", "06680008",&tcmInfo.accCal.AZX)) { return; }
+            if (check_send_next(data, "AZY", "06700008",&tcmInfo.accCal.AZY)) { return; }
+            if (check_send_next(data, "AZZ", "06780008",&tcmInfo.accCal.AZZ)) { return; }
+            if (check_send_next(data, "AXV", "06800008",&tcmInfo.accCal.AXV)) { return; }
+            if (check_send_next(data, "AYV", "06880008",&tcmInfo.accCal.AYV)) { return; }
+            if (check_send_next(data, "AZV", "06900008",&tcmInfo.accCal.AZV)) { return; }
+            if (check_send_next(data, "AXC", "06980008",&tcmInfo.accCal.AXC)) { return; }
+            if (check_send_next(data, "AYC", "06A00008",&tcmInfo.accCal.AYC)) { return; }
+            if (check_send_next(data, "AZC", "06A80008",&tcmInfo.accCal.AZC)) { return; }
+            if (check_send_next(data, "MXX", "06B00008",&tcmInfo.magCal.MXX)) { return; }
+            if (check_send_next(data, "MXY", "06B80008",&tcmInfo.magCal.MXY)) { return; }
+            if (check_send_next(data, "MXZ", "06C00008",&tcmInfo.magCal.MXZ)) { return; }
+            if (check_send_next(data, "MYX", "06C80008",&tcmInfo.magCal.MYX)) { return; }
+            if (check_send_next(data, "MYY", "06D00008",&tcmInfo.magCal.MYY)) { return; }
+            if (check_send_next(data, "MYZ", "06D80008",&tcmInfo.magCal.MYZ)) { return; }
+            if (check_send_next(data, "MZX", "06E00008",&tcmInfo.magCal.MZX)) { return; }
+            if (check_send_next(data, "MZY", "06E80008",&tcmInfo.magCal.MZY)) { return; }
+            if (check_send_next(data, "MZZ", "06F00008",&tcmInfo.magCal.MZZ)) { return; }
+            if (check_send_next(data, "MXV", "06F80008",&tcmInfo.magCal.MXV)) { return; }
+            if (check_send_next(data, "MYV", "06000108",&tcmInfo.magCal.MYV)) { return; }
+            if (check_send_next(data, "MZV", "06080108",NULL)) { return; }
+            if (check_send_next(data, "MRF", "06100108",NULL)) { return; }
+            if (check_send_next(data, "TMX", "06180108",NULL)) { return; }
+            if (check_send_next(data, "TMY", "06200108",NULL)) { return; }
+            if (check_send_next(data, "TMZ", "06280108",NULL)) { return; }
+            if (check_send_next(data, "TMX", "06300108",NULL)) { return; }
+            if (check_send_next(data, "TMY", "06380108",NULL)) { return; }
+            if (check_send_next(data, "TMZ", "06400108",NULL)) { return; }
+            if (check_send_next(data, "HSE", "06480108", NULL))
+            {
+                get_calibrations = false;
+                ESP_LOGI(TAG, "All calibrations parsed");
+                return;
+            }
         }
     }
 
