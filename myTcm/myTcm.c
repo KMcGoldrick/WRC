@@ -18,7 +18,7 @@
 #include "myUsb.h"
 #include "WRCDefs.h"
 
-#define TAG "myTcm"
+#define TAG "TCM"
 
 // Global TCM info
 TcmInfo tcmInfo;
@@ -189,6 +189,18 @@ float calcHeading(void) {
 // Velocity (Placeholder)
 // ------------------------------
 float speedFromTilt(void) {
+    /*
+		From Lowell Instruments Domino. 
+        A tilt curve is a carefully calibrated lookup table that associates
+        the angle of tilt with the speed of passing water.
+
+        To load a tilt curve, instantiate the TitlCurve class with the path to
+        the tilt curve file.Call the parse() method to parse the file.
+
+        To convert tilt angle to speed, call speed_from_tilt() with the tilt angle
+        (in degrees) from vertical.
+    */
+
     ESP_LOGE(TAG, "Speed from tilt not implemented");
     return 24.7f;
 }
@@ -307,7 +319,7 @@ void initTcm(void) {
 void runTcm(void) 
 {
     if (!areSensorsReady()) {
-        ESP_LOGI(TAG, "Sensors are not ready");
+        ESP_LOGV(TAG, "Sensors are not ready");
         return;
     }
     calcTcm();

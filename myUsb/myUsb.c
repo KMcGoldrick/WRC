@@ -112,6 +112,46 @@ int decode_gsr_values(const char* response,
 
     return 0;
 }
+esp_err_t send_command(const char* cmd)
+{
+    ESP_LOGV(TAG, "Sending command: %s", cmd);
+    if (cdc_hdl == NULL) {
+        ESP_LOGE(TAG, "CDC handle not initialized");
+        return ESP_FAIL;
+    }
+
+    char cmd_with_cr[32];
+    snprintf(cmd_with_cr, sizeof(cmd_with_cr), "%s\r", cmd);
+    size_t len = strlen(cmd_with_cr);
+    esp_err_t err = cdc_acm_host_data_tx_blocking(cdc_hdl, (const uint8_t*)cmd_with_cr, len, 1000);    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to send command: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(TAG, "Sent command: %s", cmd);
+
+    return err;
+}
+
+bool check_and_send_next_calibration(const uint8_t* data, const char* keyword, const char* next_calib_addr)
+{
+    if (!data || !keyword || !next_calib_addr) {
+        ESP_LOGW(TAG, "check_and_send_next_calibration: null argument");
+        return false;
+    }
+
+    const char* p = strstr((const char*)data, keyword);
+	if (p) {
+        ESP_LOGI(TAG, "Parsed %s", keyword);
+        if (strcmp(keyword, "HSE") != 0) {
+            char calib_cmd[32];
+            snprintf(calib_cmd, sizeof(calib_cmd), "%s %s", CALIBRATION_CMD, next_calib_addr);
+            send_command(calib_cmd);
+        }
+		return true;
+    }
+    return false;
+}
+
 void parse_response(const uint8_t* data, size_t data_len) {
     // Firmware version
     const char* fw_start = strstr((const char*)data, FIRMWARE_VERSION_CMD);
@@ -187,23 +227,72 @@ void parse_response(const uint8_t* data, size_t data_len) {
                     ESP_LOGI(TAG, "  Magnetometer: X=%x Y=%x Z=%x", mx, my, mz);
                     ESP_LOGI(TAG, "  Battery: %d mV", battery);
                     ESP_LOGI(TAG, "  Battery: %x mV", battery);
-
                 }
                 else {
                     ESP_LOGE(TAG, "Failed to decode sensor readings");
 				}
             }
-
-
             get_sensor_readings = false;
     }
 
     // Calibrations
     const char* cal_start = strstr((const char*)data, CALIBRATION_CMD);
     if (cal_start) {
-        get_calibrations = false;
-        ESP_LOGI(TAG, "Calibration data received");
-        // Parsing calibration data can be implemented here
+        cal_start += 6; // Skip "RHS 30" prefix
+        const char* cal_end = strchr(cal_start, '\r');
+        if (!cal_end) {
+            ESP_LOGE(TAG, "Malformed calibration response");
+            return;
+        }
+        else {
+            ESP_LOGV(TAG, "String:");
+            ESP_LOG_BUFFER_HEXDUMP(TAG, cal_start, cal_end - cal_start, ESP_LOG_VERBOSE);
+			if (check_and_send_next_calibration(data, "HSSRVN", "06080008")) return;
+            if (check_and_send_next_calibration(data, "TMO", "06100008")) { return; }
+            if (check_and_send_next_calibration(data, "TMR", "06180008")) { return; }
+			if (check_and_send_next_calibration(data, "TMA", "06200008")) { return; }
+			if (check_and_send_next_calibration(data, "TMB", "06280008")) { return; }
+            if (check_and_send_next_calibration(data, "TMC", "06300008")) { return; }
+			if (check_and_send_next_calibration(data, "AXX", "06380008")) { return; }
+			if (check_and_send_next_calibration(data, "AXY", "06400008")) { return; }
+			if (check_and_send_next_calibration(data, "AXZ", "06480008")) { return; }
+            if (check_and_send_next_calibration(data, "AYX", "06500008")) { return; }
+            if (check_and_send_next_calibration(data, "AYY", "06580008")) { return; }
+            if (check_and_send_next_calibration(data, "AYZ", "06600008")) { return; }
+            if (check_and_send_next_calibration(data, "AZX", "06680008")) { return; }
+            if (check_and_send_next_calibration(data, "AZY", "06700008")) { return; }
+            if (check_and_send_next_calibration(data, "AZZ", "06780008")) { return; }
+            if (check_and_send_next_calibration(data, "AXV", "06800008")) { return; }
+            if (check_and_send_next_calibration(data, "AYV", "06880008")) { return; }
+            if (check_and_send_next_calibration(data, "AZV", "06900008")) { return; }
+            if (check_and_send_next_calibration(data, "AXC", "06980008")) { return; }
+            if (check_and_send_next_calibration(data, "AYC", "06A00008")) { return; }
+            if (check_and_send_next_calibration(data, "AZC", "06A80008")) { return; }
+            if (check_and_send_next_calibration(data, "MXX", "06B00008")) { return; }
+            if (check_and_send_next_calibration(data, "MXY", "06B80008")) { return; }
+            if (check_and_send_next_calibration(data, "MXZ", "06C00008")) { return; }
+            if (check_and_send_next_calibration(data, "MYX", "06C80008")) { return; }
+            if (check_and_send_next_calibration(data, "MYY", "06D00008")) { return; }
+            if (check_and_send_next_calibration(data, "MYZ", "06D80008")) { return; }
+            if (check_and_send_next_calibration(data, "MZX", "06E00008")) { return; }
+            if (check_and_send_next_calibration(data, "MZY", "06E80008")) { return; }
+            if (check_and_send_next_calibration(data, "MZZ", "06F00008")) { return; }
+            if (check_and_send_next_calibration(data, "MXV", "06F80008")) { return; }
+            if (check_and_send_next_calibration(data, "MYV", "06000108")) { return; }
+            if (check_and_send_next_calibration(data, "MZV", "06080108")) { return; }
+            if (check_and_send_next_calibration(data, "MRF", "06100108")) { return; }
+            if (check_and_send_next_calibration(data, "TMX", "06180108")) { return; }
+            if (check_and_send_next_calibration(data, "TMY", "06200108")) { return; }
+            if (check_and_send_next_calibration(data, "TMZ", "06280108")) { return; }
+            if (check_and_send_next_calibration(data, "TMX", "06300108")) { return; }
+            if (check_and_send_next_calibration(data, "TMY", "06380108")) { return; }
+            if (check_and_send_next_calibration(data, "TMZ", "06400108")) { return; }
+            if (check_and_send_next_calibration(data, "HSE", "06480108")) {}
+
+            get_calibrations = false;
+			ESP_LOGI(TAG, "All calibrations parsed");
+            return;
+        }
     }
 
 }
@@ -355,25 +444,6 @@ void usb_event_handler_task(void* arg)
     }
 }
 
-esp_err_t send_command(const char* cmd)
-{
-    if (cdc_hdl == NULL) {
-        ESP_LOGE(TAG, "CDC handle not initialized");
-        return ESP_FAIL;
-    }
-
-    char cmd_with_cr[32];
-    snprintf(cmd_with_cr, sizeof(cmd_with_cr), "%s\r", cmd);
-    size_t len = strlen(cmd_with_cr);
-    esp_err_t err = cdc_acm_host_data_tx_blocking(cdc_hdl, (const uint8_t*)cmd_with_cr, len, 1000);    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to send command: %s", esp_err_to_name(err));
-        return err;
-    }
-	ESP_LOGI(TAG, "Sent command: %s", cmd);
-
-    return err;
-}
-
 bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
     const usb_device_desc_t* dev_desc,
     const usb_config_desc_t* config_desc)
@@ -464,7 +534,12 @@ void usb_client_task(void* arg)
 
     usb_host_initialized = true;
 
+    /* USED FOR SINGLE COMMAND TESTING */
+	bool send_once = false;
+	bool sent_once = false;
+
     while (1) {
+		bool sent_first_calib = false;
         if (!tcm_connected) {
             if (enumerate_TCM_device()) {
                 if (connect_and_switch_TCM(client_hdl, TCMdev_desc, TCMconfig_desc)) {
@@ -477,8 +552,11 @@ void usb_client_task(void* arg)
             }
         }
         else {
-            if (false) {
-				send_command(RESET_CMD);
+            if (send_once) {
+                if (!sent_once) {
+                    send_command(RESET_CMD);
+                    sent_once = true;
+                }
             }
 			else if (get_version){
 				send_command(FIRMWARE_VERSION_CMD);
@@ -487,8 +565,13 @@ void usb_client_task(void* arg)
 				send_command(SERIAL_NUMBER_CMD);
 			}
 			else if (get_calibrations) {
-				send_command(CALIBRATION_CMD);
-			}
+				if (!sent_first_calib) {
+					char calib_cmd[32];
+					snprintf(calib_cmd, sizeof(calib_cmd), "%s 0600008", CALIBRATION_CMD);
+					send_command(calib_cmd);
+					sent_first_calib = true;
+				}
+            }
             else if (get_sensor_readings) {
                 send_command(SENSOR_READINGS_CMD);
             }
@@ -510,7 +593,7 @@ void initUsb(void)
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set(TAG, ESP_LOG_VERBOSE);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,
@@ -526,13 +609,13 @@ void initUsb(void)
     xTaskCreatePinnedToCore(usb_client_task, "usb_client_task", 8192, NULL, 5, NULL, 1);
 
     while (!usb_host_initialized) {
-		ESP_LOGI(TAG, "Waiting for USB host to initialize...");
+		ESP_LOGV(TAG, "Waiting for USB host to initialize...");
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 	ESP_LOGI(TAG, "USB host initialized");
 
     while (!tcm_connected) {
-        ESP_LOGI(TAG, "Waiting for TCM to connect...");
+        ESP_LOGV(TAG, "Waiting for TCM to connect...");
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     ESP_LOGI(TAG, "TCM connected");

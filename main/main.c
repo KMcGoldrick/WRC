@@ -123,6 +123,7 @@ void app_main(void)
 #ifdef CONFIG_IDF_TARGET_ESP32S3
 	ESP_LOGE(TAG, "................Hello from the ESP32-S3!......................");
 #endif
+    ESP_LOGE(TAG, "Build date and time: " __DATE__ " " __TIME__);
     ESP_LOGE(TAG, "..............................................................");
 
 	initLED();
