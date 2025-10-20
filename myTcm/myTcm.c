@@ -6,8 +6,10 @@
 #include <string.h>
 
 // ------------------------------
-// ESP-IDF Headers
+// ESP-IDF System Headers
 // ------------------------------
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 
 // ------------------------------
@@ -27,8 +29,8 @@ TcmAverage tcmAvg;
 // ------------------------------
 // Placeholder: Calibration values
 // ------------------------------
-bool getCalibrations(void) {
-    ESP_LOGE(TAG, "Get calibrations not implemented");
+bool defaultCalibrations(void) {
+    ESP_LOGI(TAG, "Setting Default Calibrations");
 
     tcmInfo.tempCal = (TempCalCoef){ 0.0f, 10000.0f, 0.0011238100354f, 0.0002349457073f, 0.0000000848361f, 0.0f };
     tcmInfo.accCal = (CubicAccelerometer){
@@ -43,11 +45,7 @@ bool getCalibrations(void) {
     return true;
 }
 
-// ------------------------------
-// Placeholder: Raw sensor readings
-// ------------------------------
-bool getRaws(void) {
-    ESP_LOGE(TAG, "Get raw sensor data not implemented");
+bool defaultRaws(void) {
 
     tcmInfo.raw.batt = 3700;      // mV
     tcmInfo.raw.temp = 2500;      // Raw temperature
@@ -279,6 +277,58 @@ void dispTcm() {
         tcmInfo.current.north, tcmInfo.current.east);
 }
 
+void dispCalibrations(void) {
+    ESP_LOGI(TAG, "Temperature Calibration: TMR=%.2f TMA=%.6f TMB=%.10f TMC=%.10f TMD=%.10f",
+        tcmInfo.tempCal.TMR,
+        tcmInfo.tempCal.TMA,
+        tcmInfo.tempCal.TMB,
+        tcmInfo.tempCal.TMC,
+        tcmInfo.tempCal.TMD);
+	ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "Accelerometer Calibration: Gain Matrix=[[%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f]]",
+        tcmInfo.accCal.gain[0][0], tcmInfo.accCal.gain[0][1], tcmInfo.accCal.gain[0][2],
+        tcmInfo.accCal.gain[1][0], tcmInfo.accCal.gain[1][1], tcmInfo.accCal.gain[1][2],
+		tcmInfo.accCal.gain[2][0], tcmInfo.accCal.gain[2][1], tcmInfo.accCal.gain[2][2]);
+    ESP_LOGI(TAG, "Accelerometer Calibration: Offsets=(%.2f, %.2f, %.2f)",
+        tcmInfo.accCal.offset[0],
+        tcmInfo.accCal.offset[1],
+		tcmInfo.accCal.offset[2]);
+    ESP_LOGI(TAG, "Accelerometer Calibration: Cubic=(%.10f, %.10f, %.10f)",
+        tcmInfo.accCal.cubic[0],
+		tcmInfo.accCal.cubic[1], 
+		tcmInfo.accCal.cubic[2]);
+    ESP_LOGI(TAG, "Accelerometer Calibration: AXX=%.6f AXY=%.6f AXZ=%.6f AYX=%.6f AYY=%.6f AYZ=%.6f AZX=%.6f AZY=%.6f AZZ=%.6f",
+        tcmInfo.accCal.AXX, tcmInfo.accCal.AXY, tcmInfo.accCal.AXZ,
+        tcmInfo.accCal.AYX, tcmInfo.accCal.AYY, tcmInfo.accCal.AYZ,
+		tcmInfo.accCal.AZX, tcmInfo.accCal.AZY, tcmInfo.accCal.AZZ);
+    ESP_LOGI(TAG, "Accelerometer Calibration: AXV=%.10f AYV=%.10f AZV=%.10f",
+		tcmInfo.accCal.AXV, 
+		tcmInfo.accCal.AYV, 
+		tcmInfo.accCal.AZV);
+    ESP_LOGI(TAG, "Accelerometer Calibration: AXC=%.10f AYC=%.10f AZC=%.10f",
+        tcmInfo.accCal.AXC,
+        tcmInfo.accCal.AYC,
+        tcmInfo.accCal.AZC);
+	ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "Magnetometer Calibration: Soft Iron Matrix=[[%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f]]",
+        tcmInfo.magCal.softIron[0][0], tcmInfo.magCal.softIron[0][1], tcmInfo.magCal.softIron[0][2],
+		tcmInfo.magCal.softIron[1][0], tcmInfo.magCal.softIron[1][1], tcmInfo.magCal.softIron[1][2],
+		tcmInfo.magCal.softIron[2][0], tcmInfo.magCal.softIron[2][1], tcmInfo.magCal.softIron[2][2]);
+    ESP_LOGI(TAG, "Magnetometer Calibration: Hard Iron Offsets=(%.2f, %.2f, %.2f)",
+        tcmInfo.magCal.hardIron[0],
+		tcmInfo.magCal.hardIron[1],
+		tcmInfo.magCal.hardIron[2]);
+    ESP_LOGI(TAG, "Magnetometer Calibration: MXX=%.6f MXY=%.6f MXZ=%.6f MYX=%.6f MYY=%.6f MYZ=%.6f MZX=%.6f MZY=%.6f MZZ=%.6f",
+        tcmInfo.magCal.MXX, tcmInfo.magCal.MXY, tcmInfo.magCal.MXZ,
+		tcmInfo.magCal.MYX, tcmInfo.magCal.MYY, tcmInfo.magCal.MYZ,
+		tcmInfo.magCal.MZX, tcmInfo.magCal.MZY, tcmInfo.magCal.MZZ);
+	ESP_LOGI(TAG, "Magnetometer Calibration: MXV=%.10f MYV=%.10f MZV=%.10f",
+		tcmInfo.magCal.MXV,
+		tcmInfo.magCal.MYV,
+		tcmInfo.magCal.MZV);
+    ESP_LOGI(TAG, "");
+}
+
 void tcmAlgo(void) {
     if (tcmAvg.sampleCount < NUM_ITERATIONS_TO_AVERAGE) {
         ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
@@ -311,19 +361,28 @@ void initTcm(void) {
     */
     esp_log_level_set(TAG, ESP_LOG_INFO);
     resetAverages();
-    getCalibrations();
+	
+    defaultCalibrations();
+    while (!calibrationsReady()) {
+        ESP_LOGV(TAG, "Waiting for calibrations...");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    dispCalibrations();
+    
+    defaultRaws();
 	readSensors();
+    while (!sensorsReady()) {
+        ESP_LOGV(TAG, "Waiting for sensors to be ready...");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+	}
+
     ESP_LOGI(TAG, "TCM Initialized");
 }
 
 void runTcm(void) 
 {
-    if (!areSensorsReady()) {
-        ESP_LOGV(TAG, "Sensors are not ready");
-        return;
-    }
     calcTcm();
     dispTcm();
     tcmAlgo();
-	readSensors();
+    readSensors();
 }

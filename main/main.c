@@ -112,8 +112,8 @@ void app_main(void)
         •	ESP_LOG_VERBOSE
 		hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set("*", ESP_LOG_WARN);
-	esp_log_level_set(TAG, ESP_LOG_WARN);
+    esp_log_level_set("*", ESP_LOG_INFO);
+	esp_log_level_set(TAG, ESP_LOG_INFO);
 
 	// Use LOGE to force Hello message
 	ESP_LOGE(TAG, "..............................................................");
@@ -137,7 +137,7 @@ void app_main(void)
         runLED();
         runTcm();
 
-        ESP_LOGD(TAG, "Looping... %d", ++loopCounter);
+        ESP_LOGV(TAG, "Looping... %d", ++loopCounter);
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
     }
 }

@@ -58,10 +58,15 @@ void readSensors(void)
     get_sensor_readings = true;
 }
 
-bool areSensorsReady(void)
+bool sensorsReady(void)
 {
     return !get_sensor_readings;
 }
+
+bool calibrationsReady(void)
+{
+    return !get_calibrations;
+}   
 
 static uint8_t hex_to_byte(const char* hex)
 {
@@ -124,11 +129,12 @@ esp_err_t send_command(const char* cmd)
     char cmd_with_cr[32];
     snprintf(cmd_with_cr, sizeof(cmd_with_cr), "%s\r", cmd);
     size_t len = strlen(cmd_with_cr);
-    esp_err_t err = cdc_acm_host_data_tx_blocking(cdc_hdl, (const uint8_t*)cmd_with_cr, len, 1000);    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to send command: %s", esp_err_to_name(err));
+    esp_err_t err = cdc_acm_host_data_tx_blocking(cdc_hdl, (const uint8_t*)cmd_with_cr, len, 1000);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to send command: %s %s", cmd, esp_err_to_name(err));
         return err;
     }
-    ESP_LOGI(TAG, "Sent command: %s", cmd);
+    ESP_LOGV(TAG, "Sent command: %s", cmd);
 
     return err;
 }
@@ -153,7 +159,7 @@ float ascii85_to_float(const char str[5]) {
 }
 
 // --- Parse float from TCM response buffer ---
-bool parse_float_value(const uint8_t* data, float* save_to)
+bool parse_float_value(const uint8_t* data, float* save_to, const char* keyword)
 {
     if (!data || !save_to) return false;
 
@@ -164,10 +170,10 @@ bool parse_float_value(const uint8_t* data, float* save_to)
     float_bytes[3] = data[14];
     float_bytes[4] = data[15];
     float_bytes[5] = '\0';
-	ESP_LOGI(TAG, "Extracted ASCII85 float string %s", float_bytes);
+	ESP_LOGV(TAG, "Extracted ASCII85 float string %s", float_bytes);
 
     *save_to = ascii85_to_float(float_bytes);
-    ESP_LOGI(TAG, "Parsed float value: %f", *save_to);
+    ESP_LOGI(TAG, "Parsed float value: %s = %f", keyword, *save_to);
 
     return true;
 }
@@ -176,7 +182,7 @@ bool parse_float_value(const uint8_t* data, float* save_to)
 bool check_send_next(const uint8_t* data, const char* keyword, const char* next_calib_addr, float* save_to)
 {
     if (!data || !keyword || !next_calib_addr) {
-        ESP_LOGW(TAG, "check_send_next: null argument");
+        ESP_LOGE(TAG, "check_send_next: null argument");
         return false;
     }
 
@@ -184,12 +190,10 @@ bool check_send_next(const uint8_t* data, const char* keyword, const char* next_
     const char* p = strstr((const char*)data, keyword);
     if (!p) return false;
 
-    ESP_LOGI(TAG, "Parsed %s", keyword);
-
     // Parse float if requested
     if (save_to != NULL) {
-        if (!parse_float_value(data, save_to)) {
-            ESP_LOGW(TAG, "Could not parse value for %s", keyword);
+        if (!parse_float_value(data, save_to, keyword)) {
+            ESP_LOGE(TAG, "Could not parse value for %s", keyword);
         }
     }
 
@@ -197,7 +201,6 @@ bool check_send_next(const uint8_t* data, const char* keyword, const char* next_
     if (strcmp(keyword, "HSE") != 0) {
         char calib_cmd[32];
         snprintf(calib_cmd, sizeof(calib_cmd), "%s %s", CALIBRATION_CMD, next_calib_addr);
-        ESP_LOGV(TAG, "Sending command: %s", calib_cmd);
         send_command(calib_cmd);
     }
 
@@ -270,15 +273,15 @@ void parse_response(const uint8_t* data, size_t data_len) {
                     tcmInfo.raw.mag.y = my;
                     tcmInfo.raw.mag.z = mz;
                     tcmInfo.raw.batt  = battery;
-                    ESP_LOGI(TAG, "Parsed Sensor Readings:");
-                    ESP_LOGI(TAG, "  Temperature: %d", temperature);
-					ESP_LOGI(TAG, "  Temperature: %x", temperature);
-                    ESP_LOGI(TAG, "  Acceleration: X=%d Y=%d Z=%d", ax, ay, az);
-                    ESP_LOGI(TAG, "  Acceleration: X=%x Y=%x Z=%x", ax, ay, az);
-                    ESP_LOGI(TAG, "  Magnetometer: X=%d Y=%d Z=%d", mx, my, mz);
-                    ESP_LOGI(TAG, "  Magnetometer: X=%x Y=%x Z=%x", mx, my, mz);
-                    ESP_LOGI(TAG, "  Battery: %d mV", battery);
-                    ESP_LOGI(TAG, "  Battery: %x mV", battery);
+                    ESP_LOGV(TAG, "Parsed Sensor Readings:");
+                    ESP_LOGV(TAG, "  Temperature: %d", temperature);
+					ESP_LOGV(TAG, "  Temperature: %x", temperature);
+                    ESP_LOGV(TAG, "  Acceleration: X=%d Y=%d Z=%d", ax, ay, az);
+                    ESP_LOGV(TAG, "  Acceleration: X=%x Y=%x Z=%x", ax, ay, az);
+                    ESP_LOGV(TAG, "  Magnetometer: X=%d Y=%d Z=%d", mx, my, mz);
+                    ESP_LOGV(TAG, "  Magnetometer: X=%x Y=%x Z=%x", mx, my, mz);
+                    ESP_LOGV(TAG, "  Battery: %d mV", battery);
+                    ESP_LOGV(TAG, "  Battery: %x mV", battery);
                 }
                 else {
                     ESP_LOGE(TAG, "Failed to decode sensor readings");
@@ -357,8 +360,8 @@ void handle_rx(uint8_t* data, size_t data_len, void* user_arg)
         // Ignore "ERR 00.." responses
         return;
     }
-    ESP_LOGI(TAG, "Data received");
-    ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_len, ESP_LOG_INFO);
+    ESP_LOGV(TAG, "Data received");
+    ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_len, ESP_LOG_VERBOSE);
     // If you need to process data, do it here.
 	parse_response(data, data_len);
 }
@@ -385,7 +388,7 @@ bool enumerate_TCM_device(void)
     }
 
     if (addr_count == 0) {
-        ESP_LOGE(TAG, "No USB devices found");
+        ESP_LOGV(TAG, "No USB devices found");
         return false;
     }
 
@@ -414,10 +417,10 @@ bool enumerate_TCM_device(void)
             }
             else
             {
-                ESP_LOGI(TAG, "\n[DEVICE %d]", addr);
-                ESP_LOGI(TAG, "  VID=0x%04X, PID=0x%04X, bcdUSB=0x%04X",
+                ESP_LOGV(TAG, "\n[DEVICE %d]", addr);
+                ESP_LOGV(TAG, "  VID=0x%04X, PID=0x%04X, bcdUSB=0x%04X",
                     dev_desc->idVendor, dev_desc->idProduct, dev_desc->bcdUSB);
-                ESP_LOGI(TAG, "  Class=0x%02X, SubClass=0x%02X, Protocol=0x%02X",
+                ESP_LOGV(TAG, "  Class=0x%02X, SubClass=0x%02X, Protocol=0x%02X",
                     dev_desc->bDeviceClass, dev_desc->bDeviceSubClass, dev_desc->bDeviceProtocol);
                 usb_host_device_close(client_hdl, dev_hdl);
             }
@@ -431,7 +434,7 @@ bool enumerate_TCM_device(void)
         if (err == ESP_OK && config_desc)
         {
             TCMconfig_desc = (usb_config_desc_t*)config_desc; // Save for later use
-            ESP_LOGI(TAG, "bNumInterfaces = %d", config_desc->bNumInterfaces);
+            ESP_LOGV(TAG, "bNumInterfaces = %d", config_desc->bNumInterfaces);
 
             int offset = config_desc->bLength; // start after config descriptor
             const usb_standard_desc_t* desc = NULL;
@@ -448,7 +451,7 @@ bool enumerate_TCM_device(void)
 
                         // Only print first alternate setting for each logical interface
                         if (intf->bAlternateSetting == 0) {
-                            ESP_LOGI(TAG,
+                            ESP_LOGV(TAG,
                                 "  [Interface %d] Class=0x%02X, SubClass=0x%02X, Protocol=0x%02X, NumEP=%d",
                                 intf->bInterfaceNumber,
                                 intf->bInterfaceClass,
@@ -462,7 +465,7 @@ bool enumerate_TCM_device(void)
                         const usb_ep_desc_t* ep = (const usb_ep_desc_t*)desc;
                         // Only log endpoints if the previous interface's bAlternateSetting == 0
                         // (assumes interfaces and their endpoints appear sequentially)
-                        ESP_LOGI(TAG,
+                        ESP_LOGV(TAG,
                             "    Endpoint Addr=0x%02X, Attr=0x%02X, MaxPkt=%d, Interval=%d",
                             ep->bEndpointAddress,
                             ep->bmAttributes,
@@ -505,19 +508,19 @@ bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
     esp_err_t err;
 
     if (client_hdl == NULL) {
-        ESP_LOGE("USB", "Client handle is NULL");
+        ESP_LOGE(TAG, "Client handle is NULL");
         return false;
 	}
     if (dev_desc == NULL) {
-        ESP_LOGE("USB", "Device descriptor is NULL");
+        ESP_LOGE(TAG, "Device descriptor is NULL");
         return false;
 	}
     if (config_desc == NULL) {
-        ESP_LOGE("USB", "Configuration descriptor is NULL");
+        ESP_LOGE(TAG, "Configuration descriptor is NULL");
         return false;
     }
     if (config_desc->bNumInterfaces == 0) {
-        ESP_LOGE("USB", "No interfaces found in configuration descriptor");
+        ESP_LOGE(TAG, "No interfaces found in configuration descriptor");
         return false;
 	}
 
@@ -529,13 +532,13 @@ bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
 
         if (desc->bDescriptorType == USB_B_DESCRIPTOR_TYPE_INTERFACE) {
             const usb_intf_desc_t* intf = (const usb_intf_desc_t*)p;
-            ESP_LOGI("USB", "Interface %d: Class=0x%02X SubClass=0x%02X Protocol=0x%02X NumEP=%d",
+            ESP_LOGV(TAG, "Interface %d: Class=0x%02X SubClass=0x%02X Protocol=0x%02X NumEP=%d",
                 intf->bInterfaceNumber, intf->bInterfaceClass,
                 intf->bInterfaceSubClass, intf->bInterfaceProtocol,
                 intf->bNumEndpoints);
 
             if (intf->bInterfaceClass == 0x02 || intf->bInterfaceClass == 0x0A) {
-                ESP_LOGI("USB", "Attempting to open CDC interface %d", intf->bInterfaceNumber);
+                ESP_LOGI(TAG, "Attempting to open CDC interface %d", intf->bInterfaceNumber);
 
                 err = cdc_acm_host_open(dev_desc->idVendor,
                     dev_desc->idProduct,
@@ -544,11 +547,11 @@ bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
                     &cdc_hdl);
 
                 if (err == ESP_OK) {
-                    ESP_LOGI("USB", "Opened CDC interface successfully");
+                    ESP_LOGI(TAG, "Opened CDC interface successfully");
                     success = true;
                 }
                 else {
-                    ESP_LOGE("USB", "Failed to open CDC interface: %s", esp_err_to_name(err));
+                    ESP_LOGE(TAG, "Failed to open CDC interface: %s", esp_err_to_name(err));
                 }
                 break;
             }
@@ -557,7 +560,7 @@ bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
         p += desc->bLength;
     }
     if (!success) {
-        ESP_LOGE("USB", "No CDC interface found on TCM device");
+        ESP_LOGE(TAG, "No CDC interface found on TCM device");
         return false;
     }
     else {
@@ -601,7 +604,7 @@ void usb_client_task(void* arg)
                 }
             }
             else {
-                ESP_LOGI(TAG, "TCM device not found");
+                ESP_LOGV(TAG, "TCM device not found");
             }
         }
         else {
@@ -612,14 +615,17 @@ void usb_client_task(void* arg)
                 }
             }
 			else if (get_version){
+                vTaskDelay(pdMS_TO_TICKS(500));
 				send_command(FIRMWARE_VERSION_CMD);
 			}
 			else if (get_serialNum) {
-				send_command(SERIAL_NUMBER_CMD);
+                vTaskDelay(pdMS_TO_TICKS(500));
+                send_command(SERIAL_NUMBER_CMD);
 			}
 			else if (get_calibrations) {
 				if (!sent_first_calib) {
-					char calib_cmd[32];
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                    char calib_cmd[32];
 					snprintf(calib_cmd, sizeof(calib_cmd), "%s 0600008", CALIBRATION_CMD);
 					send_command(calib_cmd);
 					sent_first_calib = true;
@@ -646,7 +652,7 @@ void initUsb(void)
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, ESP_LOG_VERBOSE);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,

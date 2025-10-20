@@ -96,8 +96,8 @@ typedef struct {
     rawSensors raw;
     Sensors scaled;
     TempCalCoef tempCal;
-    CubicMagnetometer magCal;
     CubicAccelerometer accCal;
+    CubicMagnetometer magCal;
     RPY orientation;
     float headingDeg;
     Velocity current;

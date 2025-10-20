@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "WRC",
-    "project_version":    "e7fff6f-dirty",
+    "project_version":    "33ca7bb-dirty",
     "project_path":       "C:/Users/kevin/source/repos/WRC",
     "idf_path":           "C:/Espressif/frameworks/esp-idf-v5.5.1",
     "build_dir":          "C:/Users/kevin/source/repos/WRC/build",

@@ -3,4 +3,5 @@
 // ------------------------------
 extern void initUsb(void);
 extern void readSensors(void);
-extern bool areSensorsReady(void);
+extern bool sensorsReady(void);
+extern bool calibrationsReady(void);
