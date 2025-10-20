@@ -112,6 +112,7 @@ int decode_gsr_values(const char* response,
 
     return 0;
 }
+
 esp_err_t send_command(const char* cmd)
 {
     ESP_LOGV(TAG, "Sending command: %s", cmd);
@@ -132,35 +133,46 @@ esp_err_t send_command(const char* cmd)
     return err;
 }
 
-float decode_tcm_ascii_float(const uint8_t* ascii_bytes)
-{
-    uint32_t val = 0;
-    val |= ((ascii_bytes[0] - 0x20) << 24);
-    val |= ((ascii_bytes[1] - 0x20) << 16);
-    val |= ((ascii_bytes[2] - 0x20) << 8);
-    val |= ((ascii_bytes[3] - 0x20) << 0);
-    float f;
-    memcpy(&f, &val, sizeof(f));
-    return f;
+// Decode 5 ASCII85 characters into a 4-byte float
+float ascii85_to_float(const char str[5]) {
+    uint32_t value = 0;
+
+    // Convert 5 ASCII85 characters to 32-bit integer
+    for (int i = 0; i < 5; i++) {
+        if (str[i] < '!' || str[i] > 'u') return NAN; // invalid ASCII85
+        value = value * 85 + (str[i] - '!');
+    }
+
+    // Now value is the 32-bit representation of the float
+    union {
+        uint32_t u;
+        float f;
+    } u;
+    u.u = value;
+    return u.f;
 }
 
-bool parse_float_value(const uint8_t* data, const char* keyword, float* save_to)
+// --- Parse float from TCM response buffer ---
+bool parse_float_value(const uint8_t* data, float* save_to)
 {
-    if (!data || !save_to || !keyword) return false;
+    if (!data || !save_to) return false;
 
-    const char* p = strstr((const char*)data, keyword);
-    if (!p) return false;
+	char float_bytes[6] = { 0 }; // 5 bytes + null terminator
+    float_bytes[0] = data[11];
+    float_bytes[1] = data[12];
+    float_bytes[2] = data[14];
+    float_bytes[3] = data[14];
+    float_bytes[4] = data[15];
+    float_bytes[5] = '\0';
+	ESP_LOGI(TAG, "Extracted ASCII85 float string %s", float_bytes);
 
-    // The float is 4 ASCII bytes immediately after the keyword (skip space if present)
-    const uint8_t* float_bytes = (const uint8_t*)(p + strlen(keyword));
-    if (*float_bytes == ' ') float_bytes++;  // skip space if TCM adds one
+    *save_to = ascii85_to_float(float_bytes);
+    ESP_LOGI(TAG, "Parsed float value: %f", *save_to);
 
-    *save_to = decode_tcm_ascii_float(float_bytes);
-
-    ESP_LOGI(TAG, "Parsed %s float value: %f", keyword, *save_to);
     return true;
 }
 
+// --- Check for keyword, parse value, send next calibration ---
 bool check_send_next(const uint8_t* data, const char* keyword, const char* next_calib_addr, float* save_to)
 {
     if (!data || !keyword || !next_calib_addr) {
@@ -168,22 +180,20 @@ bool check_send_next(const uint8_t* data, const char* keyword, const char* next_
         return false;
     }
 
-	// Check if keyword is present in data
-    if (strstr((const char*)data, keyword) == NULL) {
-        return false;
-	}
+    // Check if keyword is present
+    const char* p = strstr((const char*)data, keyword);
+    if (!p) return false;
+
+    ESP_LOGI(TAG, "Parsed %s", keyword);
 
     // Parse float if requested
-    if (save_to != NULL)
-    {
-        if (!parse_float_value(data, keyword, save_to)) {
+    if (save_to != NULL) {
+        if (!parse_float_value(data, save_to)) {
             ESP_LOGW(TAG, "Could not parse value for %s", keyword);
         }
     }
 
-    ESP_LOGI(TAG, "Parsed %s", keyword);
-
-    // Send next calibration command, except for HSE
+    // Send next calibration command (except for HSE)
     if (strcmp(keyword, "HSE") != 0) {
         char calib_cmd[32];
         snprintf(calib_cmd, sizeof(calib_cmd), "%s %s", CALIBRATION_CMD, next_calib_addr);
