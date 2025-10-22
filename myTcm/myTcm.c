@@ -381,8 +381,13 @@ bool initTcm(void) {
 
     getStrUsb(tcmInfo.version, sizeof(tcmInfo.version), FIRMWARE_VERSION_CMD);
 	getStrUsb(tcmInfo.serialNum, sizeof(tcmInfo.serialNum), SERIAL_NUMBER_CMD);
+	getFloatAscii85Usb(&tcmInfo.tempCal.TMO, CALIBRATION_CMD, "06080008");
+	getFloatAscii85Usb(&tcmInfo.tempCal.TMR, CALIBRATION_CMD, "06100008");
+	getFloatAscii85Usb(&tcmInfo.tempCal.TMA, CALIBRATION_CMD, "06180008");
+	getFloatAscii85Usb(&tcmInfo.tempCal.TMB, CALIBRATION_CMD, "06200008");
+	getFloatAscii85Usb(&tcmInfo.tempCal.TMC, CALIBRATION_CMD, "06280008");
     ESP_LOGI(TAG, "TCM Initialized");
-    return true;
+    return false;
 }
 
 void runTcm(void) 

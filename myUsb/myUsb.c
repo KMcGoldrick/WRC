@@ -886,3 +886,129 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
     }
     return true;
 }
+
+bool getTempCalUsb(TempCalCoef* out_cal, const char* command) {
+    if (!out_cal || !command) {
+        ESP_LOGE(TAG, "getTempCalUsb: invalid arguments");
+        return false;
+    }
+    // Send command
+    send_command(command);
+    // Wait for response (timeout after 3 seconds)
+    //const uint32_t timeout_ms = 3000;
+    //uint32_t start = millis();
+    while (!data_available) { //} && (millis() - start < timeout_ms)) {
+        //vTaskDelay(pdMS_TO_TICKS(50)); Fix KJM
+    }
+    //if (!data_available) {
+    //    ESP_LOGE(TAG, "getTempCalUsb: timeout waiting for data after %u ms", timeout_ms);
+    //    return false;
+    //}
+    // Ensure rxBuff contains something
+    if (rxBuff[0] == '\0') {
+        ESP_LOGE(TAG, "getTempCalUsb: empty rxBuff");
+        return false;
+    }
+    const char* str_start = strstr((const char*)rxBuff, command);
+    if (!str_start) {
+        ESP_LOGE(TAG, "getTempCalUsb: command '%s' not found in rxBuff", command);
+        return false;
+    }
+    // Look for first space after command
+    const char* val_start = strchr(str_start, ' ');
+    if (!val_start) {
+        ESP_LOGE(TAG, "getTempCalUsb: no space found after command");
+        return false;
+    }
+    val_start += 1; // move past space
+    const char* val_end = strchr(val_start, '\r');
+    if (!val_end) {
+        ESP_LOGE(TAG, "getTempCalUsb: missing CR terminator");
+        return false;
+    }
+    // Extract substring
+    size_t len = val_end - val_start;
+    if (len == 0 || len >= 64) {
+        ESP_LOGE(TAG, "getTempCalUsb: invalid calibration string length %u", (unsigned)len);
+        return false;
+    }
+    char temp[64];
+    memcpy(temp, val_start, len);
+    temp[len] = '\0';
+    // Parse calibration coefficients from the string
+    int parsed = sscanf(temp, "%f %f %f %f %f",
+        &out_cal->TMO,
+        &out_cal->TMR,
+        &out_cal->TMA,
+		&out_cal->TMB,
+		&out_cal->TMC
+	);
+	if (parsed != 5) {
+		ESP_LOGE(TAG, "getTempCalUsb: failed to parse calibration coefficients");
+		return false;
+	}
+	ESP_LOGI(TAG, "Parsed temperature calibration coefficients:");
+	ESP_LOGI(TAG, "  TMO: %f", out_cal->TMO);
+	ESP_LOGI(TAG, "  TMR: %f", out_cal->TMR);
+	ESP_LOGI(TAG, "  TMA: %f", out_cal->TMA);
+	ESP_LOGI(TAG, "  TMB: %f", out_cal->TMB);
+	ESP_LOGI(TAG, "  TMC: %f", out_cal->TMC);
+	return true;
+}
+
+bool getFloatAscii85Usb(float* out_value, const char* command, const char* address) {
+    if (!out_value || !command || !address) {
+        ESP_LOGE(TAG, "getFloatAscii85Usb: invalid arguments");
+        return false;
+    }
+    // Send command
+    char full_command[64];
+    snprintf(full_command, sizeof(full_command), "%s %s", command, address);
+    send_command(full_command);
+    // Wait for response (timeout after 3 seconds)
+    //const uint32_t timeout_ms = 3000;
+    //uint32_t start = millis();
+    while (!data_available) { //} && (millis() - start < timeout_ms)) {
+        //vTaskDelay(pdMS_TO_TICKS(50)); Fix KJM
+    }
+    //if (!data_available) {
+    //    ESP_LOGE(TAG, "getFloatAscii85Usb: timeout waiting for data after %u ms", timeout_ms);
+    //    return false;
+    //}
+    // Ensure rxBuff contains something
+    if (rxBuff[0] == '\0') {
+        ESP_LOGE(TAG, "getFloatAscii85Usb: empty rxBuff");
+        return false;
+    }
+    const char* str_start = strstr((const char*)rxBuff, command);
+    if (!str_start) {
+        ESP_LOGE(TAG, "getFloatAscii85Usb: command '%s' not found in rxBuff", command);
+        return false;
+    }
+    // Locate space after command
+    const char* val_start = strchr(str_start, ' ');
+    if (!val_start) {
+        ESP_LOGE(TAG, "getFloatAscii85Usb: missing space after command");
+        return false;
+    }
+	val_start += 6; // move past ...space and address
+    const char* val_end = strchr(val_start, '\r');
+    if (!val_end) {
+        ESP_LOGE(TAG, "getFloatAscii85Usb: missing CR terminator");
+        return false;
+    }
+    // Extract substring
+    size_t len = val_end - val_start;
+    if (len == 0 || len >= 32) {
+        ESP_LOGE(TAG, "getFloatAscii85Usb: invalid float string length %u", (unsigned)len);
+        return false;
+    }
+    char temp[32];
+    memcpy(temp, val_start, len);
+    temp[len] = '\0';
+    // Convert ASCII85 to float
+	ESP_LOGI(TAG, "Converting ASCII85 string '%s' to float", temp);
+    *out_value = ascii85_to_float(temp);
+	ESP_LOGI(TAG, "Parsed %s from address %s: %f", command, address, *out_value);
+	return true;
+}
