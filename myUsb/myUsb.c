@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <math.h>
 
 // ------------------------------
@@ -30,43 +31,33 @@
 
 #define TAG "USB"
 
-char buff[128];
+char rxBuff[128];
+bool data_available = false;
 char readings[64] = { 0 };
 
-bool tcm_connected = false;
+bool device_connected = false;
 bool usb_host_initialized = false;
 
-bool get_version = true;
-bool get_serialNum = true;
-bool get_calibrations = true;
-bool get_sensor_readings = false;
-
-// Handle to TCM device
-usb_device_handle_t TCMdev_hdl = NULL;
-// Configuration descriptor of TCM device
-usb_config_desc_t* TCMconfig_desc = NULL;
-// Descriptor of TCM device
-const usb_device_desc_t* TCMdev_desc = NULL;
+// Handle to connected device
+usb_device_handle_t device_dev_hdl = NULL;
+// Configuration descriptor of connected device
+usb_config_desc_t* device_config_desc = NULL;
+// Descriptor of connected device
+const usb_device_desc_t* device_desc = NULL;
 
 // Handle to CDC-ACM device driver
 cdc_acm_dev_hdl_t cdc_hdl = NULL;
 // Connection handle to USB Host library
 usb_host_client_handle_t client_hdl = NULL;
 
-void readSensors(void)
-{
-    get_sensor_readings = true;
-}
+//unsigned long millis() {
+//    return (unsigned long)(esp_timer_get_time() / 1000ULL);
+//}
 
-bool sensorsReady(void)
+bool readSensors(void)
 {
-    return !get_sensor_readings;
+    return true;    
 }
-
-bool calibrationsReady(void)
-{
-    return !get_calibrations;
-}   
 
 static uint8_t hex_to_byte(const char* hex)
 {
@@ -121,6 +112,7 @@ int decode_gsr_values(const char* response,
 esp_err_t send_command(const char* cmd)
 {
     ESP_LOGV(TAG, "Sending command: %s", cmd);
+	data_available = false;
     if (cdc_hdl == NULL) {
         ESP_LOGE(TAG, "CDC handle not initialized");
         return ESP_FAIL;
@@ -173,7 +165,8 @@ bool parse_float_value(const uint8_t* data, float* save_to, const char* keyword)
 	ESP_LOGV(TAG, "Extracted ASCII85 float string %s", float_bytes);
 
     *save_to = ascii85_to_float(float_bytes);
-    ESP_LOGI(TAG, "Parsed float value: %s = %f", keyword, *save_to);
+    //++calib_step;
+    //ESP_LOGI(TAG, "Parsed float value: %s = %f counter = %d", keyword, *save_to, calib_step);
 
     return true;
 }
@@ -223,7 +216,7 @@ void parse_response(const uint8_t* data, size_t data_len) {
                 }
             }
         }
-		get_version = false;
+		//get_version = false;
 		ESP_LOGI(TAG, "Parsed Firmware version: %s", tcmInfo.version);
     }
 
@@ -242,7 +235,7 @@ void parse_response(const uint8_t* data, size_t data_len) {
                 }
             }
         }
-		get_serialNum = false;
+		//get_serialNum = false;
         ESP_LOGI(TAG, "Parsed Serial Number: %s", tcmInfo.serialNum);
     }
 
@@ -287,7 +280,7 @@ void parse_response(const uint8_t* data, size_t data_len) {
                     ESP_LOGE(TAG, "Failed to decode sensor readings");
 				}
             }
-            get_sensor_readings = false;
+            //get_sensor_readings = false;
     }
 
     // Calibrations
@@ -344,8 +337,13 @@ void parse_response(const uint8_t* data, size_t data_len) {
             if (check_send_next(data, "TMZ", "06400108",NULL)) { return; }
             if (check_send_next(data, "HSE", "06480108", NULL))
             {
-                get_calibrations = false;
-                ESP_LOGI(TAG, "All calibrations parsed");
+				if (false) {
+                    //get_calibrations = false;
+                    ESP_LOGI(TAG, "All calibrations parsed");
+                } else {
+                    //ESP_LOGE(TAG, "Calibration parsing ended prematurely at step %d", calib_step);
+					//calib_step = 0;
+				}
                 return;
             }
         }
@@ -363,7 +361,9 @@ void handle_rx(uint8_t* data, size_t data_len, void* user_arg)
     ESP_LOGV(TAG, "Data received");
     ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_len, ESP_LOG_VERBOSE);
     // If you need to process data, do it here.
-	parse_response(data, data_len);
+	//parse_response(data, data_len);
+    strcpy(rxBuff, (char*)data);
+	data_available = true;
 }
 
 // CDC-ACM configuration
@@ -375,7 +375,7 @@ const cdc_acm_host_device_config_t dev_config = {
     .data_cb = handle_rx
 };
 
-bool enumerate_TCM_device(void)
+bool enumerate_device(int vid, int pid)
 {
     uint8_t addr_list[8];
     int addr_count = 0;
@@ -410,13 +410,15 @@ bool enumerate_TCM_device(void)
         // --- DEVICE DESCRIPTOR ---
         err = usb_host_get_device_descriptor(dev_hdl, &dev_desc);
         if (err == ESP_OK) {
-            if (dev_desc->idVendor == TCM_VID && dev_desc->idProduct == TCM_PID) {
-                ESP_LOGI(TAG, "TCM device found at address %d", addr);
-                TCMdev_hdl = dev_hdl;
-                TCMdev_desc = dev_desc;
+            if (dev_desc->idVendor == vid && dev_desc->idProduct == pid) {
+                ESP_LOGI(TAG, "VID %d PID %d device found at address %d", vid, pid, addr);
+                device_dev_hdl = dev_hdl;
+                device_desc = dev_desc;
             }
             else
             {
+                ESP_LOGV(TAG, "Looking for VID 0x%04X PID 0x%04X, found VID 0x%04X PID 0x%04X at address %d",
+					vid, pid, dev_desc->idVendor, dev_desc->idProduct, addr);
                 ESP_LOGV(TAG, "\n[DEVICE %d]", addr);
                 ESP_LOGV(TAG, "  VID=0x%04X, PID=0x%04X, bcdUSB=0x%04X",
                     dev_desc->idVendor, dev_desc->idProduct, dev_desc->bcdUSB);
@@ -433,7 +435,7 @@ bool enumerate_TCM_device(void)
         err = usb_host_get_active_config_descriptor(dev_hdl, &config_desc);
         if (err == ESP_OK && config_desc)
         {
-            TCMconfig_desc = (usb_config_desc_t*)config_desc; // Save for later use
+            device_config_desc = (usb_config_desc_t*)config_desc; // Save for later use
             ESP_LOGV(TAG, "bNumInterfaces = %d", config_desc->bNumInterfaces);
 
             int offset = config_desc->bLength; // start after config descriptor
@@ -479,7 +481,7 @@ bool enumerate_TCM_device(void)
 
     }
 
-	return (TCMdev_hdl != NULL);
+	return (device_dev_hdl != NULL);
 }
 
 void usb_event_handler_task(void* arg)
@@ -500,7 +502,7 @@ void usb_event_handler_task(void* arg)
     }
 }
 
-bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
+bool connect_and_switch_device(usb_host_client_handle_t client_hdl,
     const usb_device_desc_t* dev_desc,
     const usb_config_desc_t* config_desc)
 {
@@ -560,12 +562,10 @@ bool connect_and_switch_TCM(usb_host_client_handle_t client_hdl,
         p += desc->bLength;
     }
     if (!success) {
-        ESP_LOGE(TAG, "No CDC interface found on TCM device");
+        ESP_LOGE(TAG, "No CDC interface found on connected device");
         return false;
     }
-    else {
-		return true;
-    }
+	return success;
 }
 
 void usb_client_task(void* arg)
@@ -590,11 +590,8 @@ void usb_client_task(void* arg)
 
     usb_host_initialized = true;
 
-    /* USED FOR SINGLE COMMAND TESTING */
-	bool send_once = false;
-	bool sent_once = false;
-
     while (1) {
+        /*
 		bool sent_first_calib = false;
         if (!tcm_connected) {
             if (enumerate_TCM_device()) {
@@ -636,11 +633,12 @@ void usb_client_task(void* arg)
             }
         }
 
+        */
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
-void initUsb(void)
+bool initUsb(void)
 {
     /*
     * Levels available:
@@ -652,7 +650,7 @@ void initUsb(void)
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set(TAG, ESP_LOG_VERBOSE);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,
@@ -672,10 +670,219 @@ void initUsb(void)
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 	ESP_LOGI(TAG, "USB host initialized");
+    return true;
 
+    /*
     while (!tcm_connected) {
         ESP_LOGV(TAG, "Waiting for TCM to connect...");
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     ESP_LOGI(TAG, "TCM connected");
+    */
+}
+
+bool connectDevice(int vid, int pid)
+{
+	ESP_LOGI(TAG, "Connecting to device VID=0x%04X PID=0x%04X", vid, pid);
+    if (enumerate_device(vid, pid)) {
+        if (connect_and_switch_device(client_hdl, device_desc, device_config_desc)) {
+            ESP_LOGI(TAG, "Device connected and switched to CDC-ACM");
+            return true;
+        }
+	}
+    return false;
+}
+
+bool getFloatUsb(float* out_value, const char* command)
+{
+    if (!out_value || !command) {
+        ESP_LOGE(TAG, "getFloatUsb: invalid arguments");
+        return false;
+    }
+
+    // Send the command to the device
+    send_command(command);
+
+    // Wait for data (use a timeout for safety)
+    //const uint32_t timeout_ms = 3000;
+    //uint32_t start = millis();
+    while (!data_available) {// && (millis() - start < timeout_ms)) {
+        //vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    if (!data_available) {
+        ESP_LOGE(TAG, "getFloatUsb: timeout waiting for response");
+        return false;
+    }
+
+    // Ensure rxBuff has data
+    if (rxBuff[0] == '\0') {
+        ESP_LOGE(TAG, "getFloatUsb: empty rxBuff");
+        return false;
+    }
+
+    // Find the command in rxBuff
+    const char* str_start = strstr((const char*)rxBuff, command);
+    if (!str_start) {
+        ESP_LOGE(TAG, "getFloatUsb: command '%s' not found in rxBuff", command);
+        return false;
+    }
+
+    // Locate space after command
+    const char* val_start = strchr(str_start, ' ');
+    if (!val_start) {
+        ESP_LOGE(TAG, "getFloatUsb: missing space after command");
+        return false;
+    }
+
+    val_start += 1; // move past space
+    const char* val_end = strchr(val_start, '\r');
+    if (!val_end) {
+        ESP_LOGE(TAG, "getFloatUsb: missing CR terminator");
+        return false;
+    }
+
+    // Extract substring
+    size_t len = val_end - val_start;
+    if (len == 0 || len >= 32) {
+        ESP_LOGE(TAG, "getFloatUsb: invalid float string length %u", (unsigned)len);
+        return false;
+    }
+
+    char temp[32];
+    memcpy(temp, val_start, len);
+    temp[len] = '\0';
+
+    // Parse to float
+    char* endptr = NULL;
+    float value = strtof(temp, &endptr);
+    if (endptr == temp) {
+        ESP_LOGE(TAG, "getFloatUsb: failed to parse float from '%s'", temp);
+        return false;
+    }
+
+    *out_value = value;
+    ESP_LOGI(TAG, "Parsed %s: %f", command, *out_value);
+    return true;
+}
+
+bool getStrUsb(char* save_as, size_t save_size, const char* command)
+{
+    if (!save_as || !command || save_size == 0) {
+        ESP_LOGE(TAG, "getStrUsb: invalid arguments");
+        return false;
+    }
+
+    // Send command
+    send_command(command);
+
+    // Wait for response (timeout after 3 seconds)
+    //const uint32_t timeout_ms = 3000;
+    //uint32_t start = millis();
+    while (!data_available) { //} && (millis() - start < timeout_ms)) {
+        //vTaskDelay(pdMS_TO_TICKS(50)); Fix KJM
+    }
+
+    //if (!data_available) {
+    //    ESP_LOGE(TAG, "getStrUsb: timeout waiting for data after %u ms", timeout_ms);
+    //    return false;
+    //}
+
+    // Ensure rxBuff contains something
+    if (rxBuff[0] == '\0') {
+        ESP_LOGE(TAG, "getStrUsb: empty rxBuff");
+        return false;
+    }
+
+    const char* str_start = strstr((const char*)rxBuff, command);
+    if (!str_start) {
+        ESP_LOGE(TAG, "getStrUsb: command '%s' not found in rxBuff", command);
+        return false;
+    }
+
+    // Look for first space after command
+    const char* fw_start = strchr(str_start, ' ');
+    if (!fw_start) {
+        ESP_LOGE(TAG, "getStrUsb: no space found after command");
+        return false;
+    }
+
+    fw_start += 3; // Skip delimiter (adjust or clarify reason)
+    const char* fw_end = strchr(fw_start, '\r');
+    if (!fw_end) {
+        ESP_LOGE(TAG, "getStrUsb: missing CR terminator");
+        return false;
+    }
+
+    size_t len = fw_end - fw_start;
+    if (len >= save_size) {
+        len = save_size - 1;  // Prevent overflow
+    }
+
+    memcpy(save_as, fw_start, len);
+    save_as[len] = '\0';
+
+    ESP_LOGI(TAG, "Parsed %s: %s", command, save_as);
+    return true;
+}
+
+bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
+{
+    if (!out_sensors || !command) {
+        ESP_LOGE(TAG, "getSensorsRawUSB: invalid arguments");
+        return false;
+    }
+    // Send command
+    send_command(command);
+    // Wait for response (timeout after 3 seconds)
+    //const uint32_t timeout_ms = 3000;
+    //uint32_t start = millis();
+    while (!data_available) { //} && (millis() - start < timeout_ms)) {
+        //vTaskDelay(pdMS_TO_TICKS(50)); Fix KJM
+    }
+    //if (!data_available) {
+    //    ESP_LOGE(TAG, "getSensorsRawUSB: timeout waiting for data after %u ms", timeout_ms);
+    //    return false;
+    //}
+    // Ensure rxBuff contains something
+    if (rxBuff[0] == '\0') {
+        ESP_LOGE(TAG, "getSensorsRawUSB: empty rxBuff");
+        return false;
+    }
+    const char* str_start = strstr((const char*)rxBuff, command);
+    if (!str_start) {
+        ESP_LOGE(TAG, "getSensorsRawUSB: command '%s' not found in rxBuff", command);
+        return false;
+    }
+    str_start += 6; // Skip "GSR 28" prefix
+    const char* str_end = strchr(str_start, '\r');
+    if (!str_end) {
+        ESP_LOGE(TAG, "getSensorsRawUSB: missing CR terminator");
+        return false;
+    }
+    uint16_t temperature, battery;
+    int16_t ax, ay, az, mx, my, mz;
+    if (decode_gsr_values(str_start,
+        &temperature, &ax, &ay, &az,
+        &mx, &my, &mz,
+        &battery) == 0) {
+        out_sensors->temp = temperature;
+        out_sensors->acc.x = ax;
+        out_sensors->acc.y = ay;
+        out_sensors->acc.z = az;
+        out_sensors->mag.x = mx;
+        out_sensors->mag.y = my;
+        out_sensors->mag.z = mz;
+        out_sensors->batt = battery;
+        ESP_LOGI(TAG, "Parsed raw sensor readings:");
+        ESP_LOGI(TAG, "  Temperature: %d", temperature);
+        ESP_LOGI(TAG, "  Acceleration: X=%d Y=%d Z=%d", ax, ay, az);
+        ESP_LOGI(TAG, "  Magnetometer: X=%d Y=%d Z=%d", mx, my, mz);
+        ESP_LOGI(TAG, "  Battery: %d mV", battery);
+    }
+    else {
+        ESP_LOGE(TAG, "getSensorsRawUSB: Failed to decode sensor readings");
+        return false;
+    }
+    return true;
 }

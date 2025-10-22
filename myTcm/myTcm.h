@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-void runTcm(void);
-void initTcm(void);
+extern void runTcm(void);
+extern bool initTcm(void);
 
 typedef struct {
     float x;

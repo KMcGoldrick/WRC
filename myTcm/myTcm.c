@@ -30,8 +30,6 @@ TcmAverage tcmAvg;
 // Placeholder: Calibration values
 // ------------------------------
 bool defaultCalibrations(void) {
-    ESP_LOGI(TAG, "Setting Default Calibrations");
-
     tcmInfo.tempCal = (TempCalCoef){ 0.0f, 10000.0f, 0.0011238100354f, 0.0002349457073f, 0.0000000848361f, 0.0f };
     tcmInfo.accCal = (CubicAccelerometer){
         .gain = { {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} },
@@ -42,16 +40,16 @@ bool defaultCalibrations(void) {
         .softIron = { {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} },
         .hardIron = { 0.0f, 0.0f, 0.0f }
     };
+    ESP_LOGI(TAG, "Set Default Calibrations");
     return true;
 }
 
 bool defaultRaws(void) {
-
     tcmInfo.raw.batt = 3700;      // mV
     tcmInfo.raw.temp = 2500;      // Raw temperature
     tcmInfo.raw.acc = (rawXYZ){ 512, 0, 512 };
     tcmInfo.raw.mag = (rawXYZ){ 100, 200, -50 };
-
+	ESP_LOGI(TAG, "Set Default Raw Sensor Values");
     return true;
 }
 
@@ -256,6 +254,7 @@ void calcAndCopyAverages(void) {
 void resetAverages(void) {
     tcmAvg.rawSum = (Sensors){ {0,0,0}, {0,0,0}, 0.0f, 0.0f };
     tcmAvg.sampleCount = 0;
+	ESP_LOGI(TAG, "Averages reset");
 }
 
 // ------------------------------
@@ -284,7 +283,6 @@ void dispCalibrations(void) {
         tcmInfo.tempCal.TMB,
         tcmInfo.tempCal.TMC,
         tcmInfo.tempCal.TMD);
-	ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "Accelerometer Calibration: Gain Matrix=[[%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f]]",
         tcmInfo.accCal.gain[0][0], tcmInfo.accCal.gain[0][1], tcmInfo.accCal.gain[0][2],
         tcmInfo.accCal.gain[1][0], tcmInfo.accCal.gain[1][1], tcmInfo.accCal.gain[1][2],
@@ -309,7 +307,6 @@ void dispCalibrations(void) {
         tcmInfo.accCal.AXC,
         tcmInfo.accCal.AYC,
         tcmInfo.accCal.AZC);
-	ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "Magnetometer Calibration: Soft Iron Matrix=[[%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f]]",
         tcmInfo.magCal.softIron[0][0], tcmInfo.magCal.softIron[0][1], tcmInfo.magCal.softIron[0][2],
 		tcmInfo.magCal.softIron[1][0], tcmInfo.magCal.softIron[1][1], tcmInfo.magCal.softIron[1][2],
@@ -326,7 +323,6 @@ void dispCalibrations(void) {
 		tcmInfo.magCal.MXV,
 		tcmInfo.magCal.MYV,
 		tcmInfo.magCal.MZV);
-    ESP_LOGI(TAG, "");
 }
 
 void tcmAlgo(void) {
@@ -348,7 +344,7 @@ void tcmAlgo(void) {
 // ------------------------------
 // Initialization and Run
 // ------------------------------
-void initTcm(void) {
+bool initTcm(void) {
     /*
     * Levels available:
         •	ESP_LOG_NONE
@@ -360,9 +356,15 @@ void initTcm(void) {
         hint: Run idf.py menuconfig, can set the default log level
     */
     esp_log_level_set(TAG, ESP_LOG_INFO);
+
     resetAverages();
-	
-    defaultCalibrations();
+	defaultCalibrations();
+
+    while (!connectDevice(TCM_PID, TCM_VID)) {
+        ESP_LOGV(TAG, "Waiting for TCM device to connect...");
+		vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    /*  
     while (!calibrationsReady()) {
         ESP_LOGV(TAG, "Waiting for calibrations...");
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -375,12 +377,17 @@ void initTcm(void) {
         ESP_LOGV(TAG, "Waiting for sensors to be ready...");
         vTaskDelay(pdMS_TO_TICKS(1000));
 	}
+    */ 
 
+    getStrUsb(tcmInfo.version, sizeof(tcmInfo.version), FIRMWARE_VERSION_CMD);
+	getStrUsb(tcmInfo.serialNum, sizeof(tcmInfo.serialNum), SERIAL_NUMBER_CMD);
     ESP_LOGI(TAG, "TCM Initialized");
+    return true;
 }
 
 void runTcm(void) 
 {
+    getSensorsRawUSB(&tcmInfo.raw, SENSOR_READINGS_CMD);
     calcTcm();
     dispTcm();
     tcmAlgo();

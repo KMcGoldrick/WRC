@@ -130,8 +130,20 @@ void app_main(void)
 	sequenceLED();
 	initNvsLog(erase_nvs_log,print_nvs_log);
     appendNvsLog("\n......Start......\n");
-    initUsb();
-    initTcm();
+    if (!initUsb()){
+        ESP_LOGE(TAG, "USB Initialization Failed");
+		appendNvsLog("USB Initialization Failed\n");
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+	}
+    if (!initTcm()) {
+        ESP_LOGE(TAG, "TCM Initialization Failed");
+		appendNvsLog("TCM Initialization Failed\n");
+		while (1) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+	}
 
     while (1) {
         runLED();

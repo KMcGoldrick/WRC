@@ -25,8 +25,8 @@
 #define DECLINATION_DEG  -7.66f  // Magnetic declination for Grenville NC
 
 // Lowell Instruments TCM
-#define TCM_VID 0x2047
-#define TCM_PID 0x08AE
+#define TCM_VID 0x08AE
+#define TCM_PID 0x2047
 #define FIRMWARE_VERSION_CMD   "GFV"
 #define CALIBRATION_CMD        "RHS"
 #define INTERVAL_TIME_CMD      "GIT"
