@@ -27,10 +27,6 @@ bool processRunning = false; // Update based on TCM status
 bool erase_nvs_log = false; // Set to true to erase NVS on startup
 bool print_nvs_log = false;  // Set to true to print NVS log on startup
 
-unsigned long millis() {
-    return (unsigned long)(esp_timer_get_time() / 1000ULL);
-}
-
 void setPixelColor(int idx, uint8_t r, uint8_t g, uint8_t b) {
     led_strip_set_pixel(led_strip, idx, r, g, b);
     led_strip_refresh(led_strip);

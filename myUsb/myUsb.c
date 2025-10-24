@@ -12,6 +12,7 @@
 // ------------------------------
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_timer.h"
 
 // ------------------------------
 // ESP-IDF Headers
@@ -32,8 +33,8 @@
 #define TAG "USB"
 
 char rxBuff[128];
-bool data_available = false;
 char readings[64] = { 0 };
+bool data_available = false;
 
 bool device_connected = false;
 bool usb_host_initialized = false;
@@ -50,13 +51,8 @@ cdc_acm_dev_hdl_t cdc_hdl = NULL;
 // Connection handle to USB Host library
 usb_host_client_handle_t client_hdl = NULL;
 
-//unsigned long millis() {
-//    return (unsigned long)(esp_timer_get_time() / 1000ULL);
-//}
-
-bool readSensors(void)
-{
-    return true;    
+unsigned long millis() {
+    return (unsigned long)(esp_timer_get_time() / 1000ULL);
 }
 
 static uint8_t hex_to_byte(const char* hex)
@@ -165,8 +161,6 @@ bool parse_float_value(const uint8_t* data, float* save_to, const char* keyword)
 	ESP_LOGV(TAG, "Extracted ASCII85 float string %s", float_bytes);
 
     *save_to = ascii85_to_float(float_bytes);
-    //++calib_step;
-    //ESP_LOGI(TAG, "Parsed float value: %s = %f counter = %d", keyword, *save_to, calib_step);
 
     return true;
 }
@@ -216,7 +210,6 @@ void parse_response(const uint8_t* data, size_t data_len) {
                 }
             }
         }
-		//get_version = false;
 		ESP_LOGI(TAG, "Parsed Firmware version: %s", tcmInfo.version);
     }
 
@@ -235,7 +228,6 @@ void parse_response(const uint8_t* data, size_t data_len) {
                 }
             }
         }
-		//get_serialNum = false;
         ESP_LOGI(TAG, "Parsed Serial Number: %s", tcmInfo.serialNum);
     }
 
@@ -360,8 +352,6 @@ void handle_rx(uint8_t* data, size_t data_len, void* user_arg)
     }
     ESP_LOGV(TAG, "Data received");
     ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_len, ESP_LOG_VERBOSE);
-    // If you need to process data, do it here.
-	//parse_response(data, data_len);
     strcpy(rxBuff, (char*)data);
 	data_available = true;
 }
@@ -650,7 +640,7 @@ bool initUsb(void)
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, ESP_LOG_VERBOSE);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,
@@ -704,14 +694,13 @@ bool getFloatUsb(float* out_value, const char* command)
     send_command(command);
 
     // Wait for data (use a timeout for safety)
-    //const uint32_t timeout_ms = 3000;
-    //uint32_t start = millis();
-    while (!data_available) {// && (millis() - start < timeout_ms)) {
-        //vTaskDelay(pdMS_TO_TICKS(50));
+    uint32_t start = millis();
+    while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
     if (!data_available) {
-        ESP_LOGE(TAG, "getFloatUsb: timeout waiting for response");
+        ESP_LOGE(TAG, "getFloatUsb: timeout waiting for data after %u ms", USB_RESPONSE_DELAY_MS);
         return false;
     }
 
@@ -773,20 +762,22 @@ bool getStrUsb(char* save_as, size_t save_size, const char* command)
         return false;
     }
 
+    memcpy(save_as, "Default", 7);
+    save_as[7] = '\0';
+
     // Send command
     send_command(command);
 
     // Wait for response (timeout after 3 seconds)
-    //const uint32_t timeout_ms = 3000;
-    //uint32_t start = millis();
-    while (!data_available) { //} && (millis() - start < timeout_ms)) {
-        //vTaskDelay(pdMS_TO_TICKS(50)); Fix KJM
+    uint32_t start = millis();
+    while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
-    //if (!data_available) {
-    //    ESP_LOGE(TAG, "getStrUsb: timeout waiting for data after %u ms", timeout_ms);
-    //    return false;
-    //}
+    if (!data_available) {
+        ESP_LOGE(TAG, "getStrUsb: timeout waiting for data after %u ms", USB_RESPONSE_DELAY_MS);
+        return false;
+    }
 
     // Ensure rxBuff contains something
     if (rxBuff[0] == '\0') {
@@ -834,16 +825,17 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
     }
     // Send command
     send_command(command);
+    
     // Wait for response (timeout after 3 seconds)
-    //const uint32_t timeout_ms = 3000;
-    //uint32_t start = millis();
-    while (!data_available) { //} && (millis() - start < timeout_ms)) {
-        //vTaskDelay(pdMS_TO_TICKS(50)); Fix KJM
+    uint32_t start = millis();
+    while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
-    //if (!data_available) {
-    //    ESP_LOGE(TAG, "getSensorsRawUSB: timeout waiting for data after %u ms", timeout_ms);
-    //    return false;
-    //}
+    if (!data_available) {
+        ESP_LOGE(TAG, "getSensorsRawUSB: timeout waiting for data after %u ms", USB_RESPONSE_DELAY_MS);
+        return false;
+    }
+
     // Ensure rxBuff contains something
     if (rxBuff[0] == '\0') {
         ESP_LOGE(TAG, "getSensorsRawUSB: empty rxBuff");
@@ -894,16 +886,17 @@ bool getTempCalUsb(TempCalCoef* out_cal, const char* command) {
     }
     // Send command
     send_command(command);
+
     // Wait for response (timeout after 3 seconds)
-    //const uint32_t timeout_ms = 3000;
-    //uint32_t start = millis();
-    while (!data_available) { //} && (millis() - start < timeout_ms)) {
-        //vTaskDelay(pdMS_TO_TICKS(50)); Fix KJM
+    uint32_t start = millis();
+    while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
-    //if (!data_available) {
-    //    ESP_LOGE(TAG, "getTempCalUsb: timeout waiting for data after %u ms", timeout_ms);
-    //    return false;
-    //}
+    if (!data_available) {
+        ESP_LOGE(TAG, "getTempCalUsb: timeout waiting for data after %u ms", USB_RESPONSE_DELAY_MS);
+        return false;
+    }
+
     // Ensure rxBuff contains something
     if (rxBuff[0] == '\0') {
         ESP_LOGE(TAG, "getTempCalUsb: empty rxBuff");
@@ -956,7 +949,7 @@ bool getTempCalUsb(TempCalCoef* out_cal, const char* command) {
 	return true;
 }
 
-bool getFloatAscii85Usb(float* out_value, const char* command, const char* address) {
+bool getFloatAscii85Usb(float* out_value, const char* item, const char* command, const char* address) {
     if (!out_value || !command || !address) {
         ESP_LOGE(TAG, "getFloatAscii85Usb: invalid arguments");
         return false;
@@ -965,24 +958,32 @@ bool getFloatAscii85Usb(float* out_value, const char* command, const char* addre
     char full_command[64];
     snprintf(full_command, sizeof(full_command), "%s %s", command, address);
     send_command(full_command);
+    
     // Wait for response (timeout after 3 seconds)
-    //const uint32_t timeout_ms = 3000;
-    //uint32_t start = millis();
-    while (!data_available) { //} && (millis() - start < timeout_ms)) {
-        //vTaskDelay(pdMS_TO_TICKS(50)); Fix KJM
+    uint32_t start = millis();
+    while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
-    //if (!data_available) {
-    //    ESP_LOGE(TAG, "getFloatAscii85Usb: timeout waiting for data after %u ms", timeout_ms);
-    //    return false;
-    //}
+    if (!data_available) {
+        ESP_LOGE(TAG, "getFloatAscii85Usb: timeout waiting for data after %u ms", USB_RESPONSE_DELAY_MS);
+        return false;
+    }
+
     // Ensure rxBuff contains something
     if (rxBuff[0] == '\0') {
         ESP_LOGE(TAG, "getFloatAscii85Usb: empty rxBuff");
         return false;
     }
+	// Find the command in rxBuff
     const char* str_start = strstr((const char*)rxBuff, command);
     if (!str_start) {
         ESP_LOGE(TAG, "getFloatAscii85Usb: command '%s' not found in rxBuff", command);
+        return false;
+    }
+	// Find the item in rxBuff
+    const char* item_start = strstr((const char*)rxBuff, item);
+    if (!item_start) {
+        ESP_LOGE(TAG, "getFloatAscii85Usb: item '%s' not found in rxBuff", item);
         return false;
     }
     // Locate space after command
@@ -1007,8 +1008,8 @@ bool getFloatAscii85Usb(float* out_value, const char* command, const char* addre
     memcpy(temp, val_start, len);
     temp[len] = '\0';
     // Convert ASCII85 to float
-	ESP_LOGI(TAG, "Converting ASCII85 string '%s' to float", temp);
+	ESP_LOGV(TAG, "Converting ASCII85 string '%s' to float", temp);
     *out_value = ascii85_to_float(temp);
-	ESP_LOGI(TAG, "Parsed %s from address %s: %f", command, address, *out_value);
+	ESP_LOGI(TAG, "Parsed %s address %s: %f", item, address, *out_value);
 	return true;
 }

@@ -16,6 +16,9 @@
 #define LEDTime_ms 1000
 #define STARTDelay_ms 1000 
 #define MAIN_LOOP_RATE_MS 1000
+#define USB_RESPONSE_DELAY_MS 3000
+#define USB_HOST_INIT_DELAY_MS 2000
+#define USB_DEVICE_CONNECT_DELAY_MS 1000
 
 // Other
 #define MAGIC 247
