@@ -1,3 +1,22 @@
+/*
+Open Items
+READme file
+Remove build from GitHub
+USE LEDs for information
+Confirm average is occurring correctly (number of samples, timing)
+Robust initialize, retry if required, only retry what is necessary
+Error handling in run mode
+Version of calibrtion values and associated formulaes
+Robust wiring for Roll, Pitch and Yaw testing
+Serial data for plotting and analysis
+Timing review and optimization
+RS485
+ESP32S2
+Packaging
+Cabling
+*/
+
+
 // ------------------------------
 // ESP-IDF System Headers
 // ------------------------------
