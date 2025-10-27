@@ -400,7 +400,7 @@ bool initUsb(void)
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set(TAG, overall_log_level);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,
@@ -626,6 +626,8 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
         out_sensors->mag.y = my;
         out_sensors->mag.z = mz;
         out_sensors->batt = battery;
+        ESP_LOGI(TAG, "");
+        ESP_LOGI(TAG, "");
         ESP_LOGI(TAG, "Parsed raw sensor readings:");
         ESP_LOGI(TAG, "  Temperature: %d", temperature);
         ESP_LOGI(TAG, "  Acceleration: X=%d Y=%d Z=%d", ax, ay, az);
@@ -741,11 +743,14 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
         return false;
     }
 	// Find the item in rxBuff
-    const char* item_start = strstr((const char*)rxBuff, item);
-    if (!item_start) {
-        ESP_LOGE(TAG, "getFloatAscii85Usb: item '%s' not found in rxBuff", item);
-        return false;
-    }
+	// Skip if item == "***" (wildcard)
+	if (strcmp(item, "***") != 0){
+		const char* item_start = strstr((const char*)rxBuff, item);
+		if (!item_start) {
+			ESP_LOGE(TAG, "getFloatAscii85Usb: item '%s' not found in rxBuff", item);
+			return false;
+		}
+	}
     // Locate space after command
     const char* val_start = strchr(str_start, ' ');
     if (!val_start) {

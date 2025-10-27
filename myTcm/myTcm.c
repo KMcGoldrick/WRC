@@ -199,10 +199,9 @@ float speedFromTilt(void) {
 }
 
 Velocity calcCurrent(void) {
-    float speed = speedFromTilt();
     Velocity vel;
-    vel.north = speed * cosf(tcmInfo.headingDeg * M_PI / 180.0f);
-    vel.east = speed * sinf(tcmInfo.headingDeg * M_PI / 180.0f);
+    vel.north = tcmInfo.speed * cosf(tcmInfo.headingDeg * M_PI / 180.0f);
+    vel.east = tcmInfo.speed * sinf(tcmInfo.headingDeg * M_PI / 180.0f);
     return vel;
 }
 
@@ -215,6 +214,7 @@ void calcTcm(void) {
     tcmInfo.scaled.acc = calcAcc();
     tcmInfo.scaled.mag = calcMag();
     tcmInfo.orientation = calcRPY();
+    tcmInfo.speed = speedFromTilt();
     tcmInfo.headingDeg = calcHeading();
     tcmInfo.current = calcCurrent();
 }
@@ -222,7 +222,10 @@ void calcTcm(void) {
 // ------------------------------
 // Averaging
 // ------------------------------
-void addRaws(void) {
+void addRawsToRawSum(void) {
+	tcmAvg.sampleCount++;
+    ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
+
     tcmAvg.rawSum.acc.x += tcmInfo.raw.acc.x;
     tcmAvg.rawSum.acc.y += tcmInfo.raw.acc.y;
     tcmAvg.rawSum.acc.z += tcmInfo.raw.acc.z;
@@ -235,7 +238,7 @@ void addRaws(void) {
     tcmAvg.rawSum.batt += tcmInfo.raw.batt;
 }
 
-void calcAndCopyAverages(void) {
+void calcAveragesAndCopyToRaw(void) {
     tcmInfo.raw.acc.x = tcmAvg.rawSum.acc.x / tcmAvg.sampleCount;
     tcmInfo.raw.acc.y = tcmAvg.rawSum.acc.y / tcmAvg.sampleCount;
     tcmInfo.raw.acc.z = tcmAvg.rawSum.acc.z / tcmAvg.sampleCount;
@@ -268,6 +271,7 @@ void dispTcm() {
         tcmInfo.scaled.mag.x, tcmInfo.scaled.mag.y, tcmInfo.scaled.mag.z);
     ESP_LOGI(TAG, "Orientation (rad): Roll=%.2f Pitch=%.2f Yaw=%.2f",
         tcmInfo.orientation.rollRad, tcmInfo.orientation.pitchRad, tcmInfo.orientation.yawRad);
+	ESP_LOGI(TAG, "Speed (?): %.2f", tcmInfo.speed);
     ESP_LOGI(TAG, "Heading (deg): %.2f", tcmInfo.headingDeg);
     ESP_LOGI(TAG, "Current Velocity: North=%.2f East=%.2f",
         tcmInfo.current.north, tcmInfo.current.east);
@@ -322,19 +326,53 @@ void dispCalibrations(void) {
 		tcmInfo.magCal.MZV);
 }
 
-void tcmAlgo(void) {
-    if (tcmAvg.sampleCount < NUM_ITERATIONS_TO_AVERAGE) {
-        ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
-        addRaws();
-        tcmAvg.sampleCount++;
-    }
-
-    if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
-        ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
-        calcAndCopyAverages();
-        calcTcm();
-        dispTcm();
-        resetAverages();
+void tcmPlot(void) {
+    switch (serial_plot) {
+    case 0:
+		printf("Serial plotting disabled (serial_plot=0).\n");
+        break;
+    case 1:
+        printf("%d %0.2f %0.2f %0.2f\n",
+            serial_plot,
+            tcmInfo.headingDeg,
+            tcmInfo.current.north,
+            tcmInfo.current.east);
+        break;
+    case 2:
+        printf("%d %0.2f %0.2f %0.2f\n",
+            serial_plot,
+            tcmInfo.orientation.rollRad,
+            tcmInfo.orientation.pitchRad,
+            tcmInfo.orientation.yawRad);
+        break;
+    case 3:
+        printf("%d %d %d %d %0.2f %0.2f %0.2f\n",
+            serial_plot,
+            tcmInfo.raw.acc.x,
+            tcmInfo.raw.acc.y,
+            tcmInfo.raw.acc.z,
+            tcmInfo.scaled.acc.x,
+            tcmInfo.scaled.acc.y,
+            tcmInfo.scaled.acc.z);
+        break;
+    case 4:
+        printf("%d %d %d %d %0.2f %0.2f %0.2f\n",
+            serial_plot,
+            tcmInfo.raw.mag.x,
+            tcmInfo.raw.mag.y,
+            tcmInfo.raw.mag.z,
+            tcmInfo.scaled.mag.x,
+            tcmInfo.scaled.mag.y,
+            tcmInfo.scaled.mag.z);
+        break;
+    case 5:
+        printf("%d %d %0.2f %d %0.2f\n",
+            serial_plot,
+            tcmInfo.raw.temp, tcmInfo.scaled.temp, tcmInfo.raw.batt, tcmInfo.scaled.batt);
+        break;
+    default:
+        printf("Need to set 'serial_plot' to enable plotting.\n");
+        break;
     }
 }
 
@@ -352,7 +390,7 @@ bool initTcm(void) {
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set(TAG, overall_log_level);
 
     resetAverages();
 	defaultCalibrations();
@@ -364,6 +402,7 @@ bool initTcm(void) {
 
 	// Get TCM Info
 	// Version and Serial Number do not need error checking
+    float junk;
     getStrUsb(tcmInfo.version, sizeof(tcmInfo.version), FIRMWARE_VERSION_CMD);
 	getStrUsb(tcmInfo.serialNum, sizeof(tcmInfo.serialNum), SERIAL_NUMBER_CMD);
 	if (!getFloatAscii85Usb(&tcmInfo.tempCal.TMO, "TMO", CALIBRATION_CMD, "06080008")) {
@@ -494,6 +533,26 @@ bool initTcm(void) {
         ESP_LOGE(TAG, "Failed to get MZV");
 		return false;
     }
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.MRF, "MRF", CALIBRATION_CMD, "06080108")) {
+        ESP_LOGE(TAG, "Failed to get MRF");
+        return false;
+    }
+    if (!getFloatAscii85Usb(&junk,               "TMX", CALIBRATION_CMD, "06100108")) {
+        ESP_LOGE(TAG, "Failed to get TMX");
+        return false;
+    }
+    if (!getFloatAscii85Usb(&junk,               "TMY", CALIBRATION_CMD, "06180108")) {
+        ESP_LOGE(TAG, "Failed to get TMY");
+        return false;
+    }
+    if (!getFloatAscii85Usb(&junk,               "TMZ", CALIBRATION_CMD, "06200108")) {
+        ESP_LOGE(TAG, "Failed to get TMZ");
+        return false;
+    }
+    if (!getFloatAscii85Usb(&junk,               "HSE", CALIBRATION_CMD, "06280108")) {
+        ESP_LOGE(TAG, "Failed to get HSE");
+        return false;
+    }
 
     ESP_LOGI(TAG, "TCM Initialized");
     return true;
@@ -502,7 +561,20 @@ bool initTcm(void) {
 void runTcm(void) 
 {
     getSensorsRawUSB(&tcmInfo.raw, SENSOR_READINGS_CMD);
-    calcTcm();
-    dispTcm();
-    tcmAlgo();
+    addRawsToRawSum();
+    if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
+        ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
+        calcAveragesAndCopyToRaw();
+        resetAverages();
+        calcTcm();
+        dispTcm();
+        tcmPlot();
+    }
+    else {
+        calcTcm();
+        dispTcm();
+        if (plotting_all_loops) {
+            tcmPlot();
+        }
+    }
 }

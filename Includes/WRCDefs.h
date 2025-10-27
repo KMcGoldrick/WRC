@@ -1,3 +1,7 @@
+// Variables
+extern esp_log_level_t overall_log_level;
+extern int serial_plot;
+extern bool plotting_all_loops;
 // Hardware
 #define LOW 0
 #define HIGH 1

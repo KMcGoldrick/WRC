@@ -1,14 +1,14 @@
 /*
 Open Items
+Send serial data only after averaged
+Version of calibrtion values and associted formulaes
+Confirm calibration version is 3 
+Remove tmD from TempCalCoef if not used
 READme file
-Remove build from GitHub
 USE LEDs for information
-Confirm average is occurring correctly (number of samples, timing)
 Robust initialize, retry if required, only retry what is necessary
 Error handling in run mode
-Version of calibrtion values and associated formulaes
 Robust wiring for Roll, Pitch and Yaw testing
-Serial data for plotting and analysis
 Timing review and optimization
 RS485
 ESP32S2
@@ -45,6 +45,29 @@ led_strip_handle_t led_strip;
 bool processRunning = false; // Update based on TCM status
 bool erase_nvs_log = false; // Set to true to erase NVS on startup
 bool print_nvs_log = false;  // Set to true to print NVS log on startup
+/*
+* Levels available:
+    •	ESP_LOG_NONE
+    •	ESP_LOG_ERROR
+    •	ESP_LOG_WARN
+    •	ESP_LOG_INFO
+    •	ESP_LOG_DEBUG
+    •	ESP_LOG_VERBOSE
+    hint: Run idf.py menuconfig, can set the default log level
+*/
+esp_log_level_t overall_log_level = ESP_LOG_INFO; //Set to control overall log level
+bool plotting_all_loops = true; // Set to true to enable serial plotting for all loops
+int serial_plot = 3;    // 0 none
+                        // 1 Heading and Current 
+                        // 2 Roll Pitch Yaw
+                        // 3 Accel X Y Z
+                        // 4 Mag X Y Z
+                        // 5 Temperature Voltage  
+						// Values are space separated for easy serial plotting
+						// Set to 0 to disable
+						// First value is serial_plot value for plotting software
+						// Subsequent values depend on mode
+						// See myTcm.c for details 
 
 void setPixelColor(int idx, uint8_t r, uint8_t g, uint8_t b) {
     led_strip_set_pixel(led_strip, idx, r, g, b);
@@ -117,29 +140,18 @@ void runLED() {
 void app_main(void)
 {
 
-    /*
-    * Levels available:
-        •	ESP_LOG_NONE
-        •	ESP_LOG_ERROR
-        •	ESP_LOG_WARN
-        •	ESP_LOG_INFO
-        •	ESP_LOG_DEBUG
-        •	ESP_LOG_VERBOSE
-		hint: Run idf.py menuconfig, can set the default log level
-    */
-    esp_log_level_set("*", ESP_LOG_INFO);
-	esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set("*", overall_log_level);
+	esp_log_level_set(TAG, overall_log_level);
 
-	// Use LOGE to force Hello message
-	ESP_LOGE(TAG, "..............................................................");
+	ESP_LOGI(TAG, "..............................................................");
 #ifdef CONFIG_IDF_TARGET_ESP32S2
-    ESP_LOGE(TAG, "................Hello from the ESP32-S2!......................");
+    ESP_LOGI(TAG, "................Hello from the ESP32-S2!......................");
 #endif
 #ifdef CONFIG_IDF_TARGET_ESP32S3
-	ESP_LOGE(TAG, "................Hello from the ESP32-S3!......................");
+	ESP_LOGI(TAG, "................Hello from the ESP32-S3!......................");
 #endif
-    ESP_LOGE(TAG, "Build date and time: " __DATE__ " " __TIME__);
-    ESP_LOGE(TAG, "..............................................................");
+    ESP_LOGI(TAG, "Build date and time: " __DATE__ " " __TIME__);
+    ESP_LOGI(TAG, "..............................................................");
 
 	initLED();
 	sequenceLED();

@@ -54,6 +54,7 @@ typedef struct {
 	float MXV;
 	float MYV;
     float MZV;
+	float MRF;
 } CubicMagnetometer;
 
 typedef struct {
@@ -99,6 +100,7 @@ typedef struct {
     CubicAccelerometer accCal;
     CubicMagnetometer magCal;
     RPY orientation;
+	float speed;
     float headingDeg;
     Velocity current;
 } TcmInfo;
