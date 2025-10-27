@@ -1,14 +1,15 @@
 /*
 Open Items
+Send RS485 to another serial port.
 Send serial data only after averaged
 Version of calibrtion values and associted formulaes
+MRF TMX TMY TMZ????
 Confirm calibration version is 3 
 Remove tmD from TempCalCoef if not used
 READme file
 USE LEDs for information
 Robust initialize, retry if required, only retry what is necessary
 Error handling in run mode
-Robust wiring for Roll, Pitch and Yaw testing
 Timing review and optimization
 RS485
 ESP32S2

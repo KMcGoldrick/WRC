@@ -278,12 +278,14 @@ void dispTcm() {
 }
 
 void dispCalibrations(void) {
+    ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "Temperature Calibration: TMR=%.2f TMA=%.6f TMB=%.10f TMC=%.10f TMD=%.10f",
         tcmInfo.tempCal.TMR,
         tcmInfo.tempCal.TMA,
         tcmInfo.tempCal.TMB,
         tcmInfo.tempCal.TMC,
         tcmInfo.tempCal.TMD);
+    ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "Accelerometer Calibration: Gain Matrix=[[%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f]]",
         tcmInfo.accCal.gain[0][0], tcmInfo.accCal.gain[0][1], tcmInfo.accCal.gain[0][2],
         tcmInfo.accCal.gain[1][0], tcmInfo.accCal.gain[1][1], tcmInfo.accCal.gain[1][2],
@@ -296,18 +298,7 @@ void dispCalibrations(void) {
         tcmInfo.accCal.cubic[0],
 		tcmInfo.accCal.cubic[1], 
 		tcmInfo.accCal.cubic[2]);
-    ESP_LOGI(TAG, "Accelerometer Calibration: AXX=%.6f AXY=%.6f AXZ=%.6f AYX=%.6f AYY=%.6f AYZ=%.6f AZX=%.6f AZY=%.6f AZZ=%.6f",
-        tcmInfo.accCal.AXX, tcmInfo.accCal.AXY, tcmInfo.accCal.AXZ,
-        tcmInfo.accCal.AYX, tcmInfo.accCal.AYY, tcmInfo.accCal.AYZ,
-		tcmInfo.accCal.AZX, tcmInfo.accCal.AZY, tcmInfo.accCal.AZZ);
-    ESP_LOGI(TAG, "Accelerometer Calibration: AXV=%.10f AYV=%.10f AZV=%.10f",
-		tcmInfo.accCal.AXV, 
-		tcmInfo.accCal.AYV, 
-		tcmInfo.accCal.AZV);
-    ESP_LOGI(TAG, "Accelerometer Calibration: AXC=%.10f AYC=%.10f AZC=%.10f",
-        tcmInfo.accCal.AXC,
-        tcmInfo.accCal.AYC,
-        tcmInfo.accCal.AZC);
+    ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "Magnetometer Calibration: Soft Iron Matrix=[[%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f]]",
         tcmInfo.magCal.softIron[0][0], tcmInfo.magCal.softIron[0][1], tcmInfo.magCal.softIron[0][2],
 		tcmInfo.magCal.softIron[1][0], tcmInfo.magCal.softIron[1][1], tcmInfo.magCal.softIron[1][2],
@@ -316,14 +307,7 @@ void dispCalibrations(void) {
         tcmInfo.magCal.hardIron[0],
 		tcmInfo.magCal.hardIron[1],
 		tcmInfo.magCal.hardIron[2]);
-    ESP_LOGI(TAG, "Magnetometer Calibration: MXX=%.6f MXY=%.6f MXZ=%.6f MYX=%.6f MYY=%.6f MYZ=%.6f MZX=%.6f MZY=%.6f MZZ=%.6f",
-        tcmInfo.magCal.MXX, tcmInfo.magCal.MXY, tcmInfo.magCal.MXZ,
-		tcmInfo.magCal.MYX, tcmInfo.magCal.MYY, tcmInfo.magCal.MYZ,
-		tcmInfo.magCal.MZX, tcmInfo.magCal.MZY, tcmInfo.magCal.MZZ);
-	ESP_LOGI(TAG, "Magnetometer Calibration: MXV=%.10f MYV=%.10f MZV=%.10f",
-		tcmInfo.magCal.MXV,
-		tcmInfo.magCal.MYV,
-		tcmInfo.magCal.MZV);
+    ESP_LOGI(TAG, "Magnetometer Calibration: MRF =%.2f", tcmInfo.magCal.MRF);
 }
 
 void tcmPlot(void) {
@@ -425,111 +409,111 @@ bool initTcm(void) {
         ESP_LOGE(TAG, "Failed to get TMC");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AXX, "AXX", CALIBRATION_CMD, "06300008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[0][0], "AXX", CALIBRATION_CMD, "06300008")) {
         ESP_LOGE(TAG, "Failed to get AXX");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AXY, "AXY", CALIBRATION_CMD, "06380008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[0][1], "AXY", CALIBRATION_CMD, "06380008")) {
         ESP_LOGE(TAG, "Failed to get AXY");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AXZ, "AXZ", CALIBRATION_CMD, "06400008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[0][2], "AXZ", CALIBRATION_CMD, "06400008")) {
         ESP_LOGE(TAG, "Failed to get AXZ");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AYX, "AYX", CALIBRATION_CMD, "06480008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[1][0], "AYX", CALIBRATION_CMD, "06480008")) {
         ESP_LOGE(TAG, "Failed to get AYX");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AYY, "AYY", CALIBRATION_CMD, "06500008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[1][1], "AYY", CALIBRATION_CMD, "06500008")) {
         ESP_LOGE(TAG, "Failed to get AYY");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AYZ, "AYZ", CALIBRATION_CMD, "06580008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[1][2], "AYZ", CALIBRATION_CMD, "06580008")) {
         ESP_LOGE(TAG, "Failed to get AYZ");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AZX, "AZX", CALIBRATION_CMD, "06600008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[2][0], "AZX", CALIBRATION_CMD, "06600008")) {
         ESP_LOGE(TAG, "Failed to get AZX");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AZY, "AZY", CALIBRATION_CMD, "06680008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[2][1], "AZY", CALIBRATION_CMD, "06680008")) {
         ESP_LOGE(TAG, "Failed to get AZY");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AZZ, "AZZ", CALIBRATION_CMD, "06700008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[2][2], "AZZ", CALIBRATION_CMD, "06700008")) {
         ESP_LOGE(TAG, "Failed to get AZZ");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AXV, "AXV", CALIBRATION_CMD, "06780008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.offset[0], "AXV", CALIBRATION_CMD, "06780008")) {
         ESP_LOGE(TAG, "Failed to get AXV");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AYV, "AYV", CALIBRATION_CMD, "06800008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.offset[1], "AYV", CALIBRATION_CMD, "06800008")) {
         ESP_LOGE(TAG, "Failed to get AYV");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AZV, "AZV", CALIBRATION_CMD, "06880008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.offset[2], "AZV", CALIBRATION_CMD, "06880008")) {
         ESP_LOGE(TAG, "Failed to get AZV");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AXC, "AXC", CALIBRATION_CMD, "06900008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.cubic[0], "AXC", CALIBRATION_CMD, "06900008")) {
         ESP_LOGE(TAG, "Failed to get AXC");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AYC, "AYC", CALIBRATION_CMD, "06980008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.cubic[1], "AYC", CALIBRATION_CMD, "06980008")) {
         ESP_LOGE(TAG, "Failed to get AYC");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.accCal.AZC, "AZC", CALIBRATION_CMD, "06A00008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.accCal.cubic[2], "AZC", CALIBRATION_CMD, "06A00008")) {
         ESP_LOGE(TAG, "Failed to get AZC");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MXX, "MXX", CALIBRATION_CMD, "06A80008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[0][0], "MXX", CALIBRATION_CMD, "06A80008")) {
         ESP_LOGE(TAG, "Failed to get MXX");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MXY, "MXY", CALIBRATION_CMD, "06B00008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[0][1], "MXY", CALIBRATION_CMD, "06B00008")) {
         ESP_LOGE(TAG, "Failed to get MXY");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MXZ, "MXZ", CALIBRATION_CMD, "06B80008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[0][2], "MXZ", CALIBRATION_CMD, "06B80008")) {
         ESP_LOGE(TAG, "Failed to get MXZ");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MYX, "MYX", CALIBRATION_CMD, "06C00008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[1][0], "MYX", CALIBRATION_CMD, "06C00008")) {
         ESP_LOGE(TAG, "Failed to get MYX");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MYY, "MYY", CALIBRATION_CMD, "06C80008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[1][1], "MYY", CALIBRATION_CMD, "06C80008")) {
         ESP_LOGE(TAG, "Failed to get MYY");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MYZ, "MYZ", CALIBRATION_CMD, "06D00008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[1][2], "MYZ", CALIBRATION_CMD, "06D00008")) {
         ESP_LOGE(TAG, "Failed to get MYZ");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MZX, "MZX", CALIBRATION_CMD, "06D80008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[2][0], "MZX", CALIBRATION_CMD, "06D80008")) {
         ESP_LOGE(TAG, "Failed to get MZX");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MZY, "MZY", CALIBRATION_CMD, "06E00008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[2][1], "MZY", CALIBRATION_CMD, "06E00008")) {
         ESP_LOGE(TAG, "Failed to get MZY");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MZZ, "MZZ", CALIBRATION_CMD, "06E80008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[2][2], "MZZ", CALIBRATION_CMD, "06E80008")) {
         ESP_LOGE(TAG, "Failed to get MZZ");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MXV, "MXV", CALIBRATION_CMD, "06F00008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.hardIron[0], "MXV", CALIBRATION_CMD, "06F00008")) {
         ESP_LOGE(TAG, "Failed to get MXV");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MYV, "MYV", CALIBRATION_CMD, "06F80008")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.hardIron[1], "MYV", CALIBRATION_CMD, "06F80008")) {
         ESP_LOGE(TAG, "Failed to get MYV");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MZV, "MZV", CALIBRATION_CMD, "06000108")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.hardIron[2], "MZV", CALIBRATION_CMD, "06000108")) {
         ESP_LOGE(TAG, "Failed to get MZV");
 		return false;
     }
@@ -553,6 +537,8 @@ bool initTcm(void) {
         ESP_LOGE(TAG, "Failed to get HSE");
         return false;
     }
+
+    dispCalibrations();
 
     ESP_LOGI(TAG, "TCM Initialized");
     return true;

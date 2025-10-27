@@ -775,6 +775,6 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
     // Convert ASCII85 to float
 	ESP_LOGV(TAG, "Converting ASCII85 string '%s' to float", temp);
     *out_value = ascii85_to_float(temp);
-	ESP_LOGI(TAG, "Parsed %s address %s: %f", item, address, *out_value);
+	ESP_LOGV(TAG, "Parsed %s address %s: %f", item, address, *out_value);
 	return true;
 }

@@ -22,38 +22,11 @@ typedef struct {
     float gain[3][3];   // 3x3 gain matrix
     float offset[3];    // 3x1 offset vector
     float cubic[3];     // 3x1 cubic correction
-	float AXX;
-	float AXY;
-	float AXZ;
-	float AYX;
-	float AYY;
-	float AYZ;
-	float AZX;
-	float AZY;
-	float AZZ;
-    float AXV;
-	float AYV;
-	float AZV;
-    float AXC;
-	float AYC;
-	float AZC;
 } CubicAccelerometer;
 
 typedef struct {
     float softIron[3][3];  // 3x3 soft-iron correction matrix
     float hardIron[3];     // 3x1 hard-iron offset
-	float MXX;
-	float MXY;
-	float MXZ;
-	float MYX;
-	float MYY;
-	float MYZ;
-	float MZX;
-	float MZY;
-	float MZZ;
-	float MXV;
-	float MYV;
-    float MZV;
 	float MRF;
 } CubicMagnetometer;
 
