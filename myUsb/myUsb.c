@@ -450,59 +450,71 @@ bool getStrUsb(char* save_as, size_t save_size, const char* command)
         return false;
     }
 
-    memcpy(save_as, "Default", 7);
-    save_as[7] = '\0';
+    for (int attempt = 0; attempt < NUM_RETRIES; ++attempt) {
 
-    // Send command
-    send_command(command);
+        // Clear output and temp buffers
+        memset(save_as, 0, save_size);
+        data_available = false;
+        memset(rxBuff, 0, sizeof(rxBuff));
 
-    // Wait for response (timeout after 3 seconds)
-    uint32_t start = millis();
-    while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
-        vTaskDelay(pdMS_TO_TICKS(50));
+        // Send command
+        send_command(command);
+        ESP_LOGI(TAG, "getStrUsb: sent command '%s' (try %d/%d)", command, attempt + 1, NUM_RETRIES);
+
+        // Wait for response with timeout
+        uint32_t start = millis();
+        while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+
+        if (!data_available) {
+            ESP_LOGW(TAG, "getStrUsb: timeout waiting for response (%u ms)", USB_RESPONSE_DELAY_MS);
+            continue; // retry
+        }
+
+        // Validate received buffer
+        if (rxBuff[0] == '\0') {
+            ESP_LOGW(TAG, "getStrUsb: empty response buffer");
+            continue; // retry
+        }
+
+        // Find command in response
+        const char* str_start = strstr((const char*)rxBuff, command);
+        if (!str_start) {
+            ESP_LOGW(TAG, "getStrUsb: command '%s' not found in response", command);
+            continue; // retry
+        }
+
+        // Find first space after command
+        const char* fw_start = strchr(str_start, ' ');
+        if (!fw_start) {
+            ESP_LOGW(TAG, "getStrUsb: no space found after command");
+            continue; // retry
+        }
+
+		fw_start += 3; // Move past space and 2-char address
+
+        // Find CR (end of line)
+        const char* fw_end = strchr(fw_start, '\r');
+        if (!fw_end) {
+            ESP_LOGW(TAG, "getStrUsb: missing CR terminator");
+            continue; // retry
+        }
+
+        // Extract substring safely
+        size_t len = fw_end - fw_start;
+        if (len >= save_size)
+            len = save_size - 1;
+
+        memcpy(save_as, fw_start, len);
+        save_as[len] = '\0';
+
+        ESP_LOGI(TAG, "getStrUsb: parsed '%s' = '%s'", command, save_as);
+        return true; // success
     }
 
-    if (!data_available) {
-        ESP_LOGE(TAG, "getStrUsb: timeout waiting for data after %u ms", USB_RESPONSE_DELAY_MS);
-        return false;
-    }
-
-    // Ensure rxBuff contains something
-    if (rxBuff[0] == '\0') {
-        ESP_LOGE(TAG, "getStrUsb: empty rxBuff");
-        return false;
-    }
-
-    const char* str_start = strstr((const char*)rxBuff, command);
-    if (!str_start) {
-        ESP_LOGE(TAG, "getStrUsb: command '%s' not found in rxBuff", command);
-        return false;
-    }
-
-    // Look for first space after command
-    const char* fw_start = strchr(str_start, ' ');
-    if (!fw_start) {
-        ESP_LOGE(TAG, "getStrUsb: no space found after command");
-        return false;
-    }
-
-    fw_start += 3; // Skip delimiter (adjust or clarify reason)
-    const char* fw_end = strchr(fw_start, '\r');
-    if (!fw_end) {
-        ESP_LOGE(TAG, "getStrUsb: missing CR terminator");
-        return false;
-    }
-
-    size_t len = fw_end - fw_start;
-    if (len >= save_size) {
-        len = save_size - 1;  // Prevent overflow
-    }
-
-    memcpy(save_as, fw_start, len);
-    save_as[len] = '\0';
-
-    ESP_LOGI(TAG, "Parsed %s: %s", command, save_as);
-    return true;
+    ESP_LOGE(TAG, "getStrUsb: failed after %d retries", NUM_RETRIES);
+    return false;
 }
 
 bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
@@ -511,41 +523,66 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
         ESP_LOGE(TAG, "getSensorsRawUSB: invalid arguments");
         return false;
     }
-    // Send command
-    send_command(command);
-    
-    // Wait for response (timeout after 3 seconds)
-    uint32_t start = millis();
-    while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-    if (!data_available) {
-        ESP_LOGE(TAG, "getSensorsRawUSB: timeout waiting for data after %u ms", USB_RESPONSE_DELAY_MS);
-        return false;
-    }
 
-    // Ensure rxBuff contains something
-    if (rxBuff[0] == '\0') {
-        ESP_LOGE(TAG, "getSensorsRawUSB: empty rxBuff");
-        return false;
-    }
-    const char* str_start = strstr((const char*)rxBuff, command);
-    if (!str_start) {
-        ESP_LOGE(TAG, "getSensorsRawUSB: command '%s' not found in rxBuff", command);
-        return false;
-    }
-    str_start += 6; // Skip "GSR 28" prefix
-    const char* str_end = strchr(str_start, '\r');
-    if (!str_end) {
-        ESP_LOGE(TAG, "getSensorsRawUSB: missing CR terminator");
-        return false;
-    }
-    uint16_t temperature, battery;
-    int16_t ax, ay, az, mx, my, mz;
-    if (decode_gsr_values(str_start,
-        &temperature, &ax, &ay, &az,
-        &mx, &my, &mz,
-        &battery) == 0) {
+    for (int attempt = 1; attempt <= NUM_RETRIES; ++attempt) {
+
+        // Reset state
+        data_available = false;
+        memset(rxBuff, 0, sizeof(rxBuff));
+
+        // Send command
+        send_command(command);
+        ESP_LOGI(TAG, "getSensorsRawUSB: sent command '%s' (attempt %d/%d)",
+            command, attempt, NUM_RETRIES);
+
+        // Wait for response with timeout
+        uint32_t start = millis();
+        while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+
+        if (!data_available) {
+            ESP_LOGW(TAG, "getSensorsRawUSB: timeout waiting for response (%u ms)",
+                USB_RESPONSE_DELAY_MS);
+            continue; // retry
+        }
+
+        if (rxBuff[0] == '\0') {
+            ESP_LOGW(TAG, "getSensorsRawUSB: empty rxBuff");
+            continue; // retry
+        }
+
+        // Find command text in response
+        const char* str_start = strstr((const char*)rxBuff, command);
+        if (!str_start) {
+            ESP_LOGW(TAG, "getSensorsRawUSB: command '%s' not found in response", command);
+            continue; // retry
+        }
+
+        // Move past the command and optional space
+        str_start += 6;
+
+        // Find end of line
+        const char* str_end = strchr(str_start, '\r');
+        if (!str_end) {
+            ESP_LOGW(TAG, "getSensorsRawUSB: missing CR terminator");
+            continue; // retry
+        }
+
+        // Temporary decoded values
+        uint16_t temperature = 0, battery = 0;
+        int16_t ax = 0, ay = 0, az = 0, mx = 0, my = 0, mz = 0;
+
+        if (decode_gsr_values(str_start,
+            &temperature, &ax, &ay, &az,
+            &mx, &my, &mz,
+            &battery) != 0)
+        {
+            ESP_LOGW(TAG, "getSensorsRawUSB: failed to decode sensor readings");
+            continue; // retry
+        }
+
+        // Assign parsed values to output
         out_sensors->temp = temperature;
         out_sensors->acc.x = ax;
         out_sensors->acc.y = ay;
@@ -554,85 +591,109 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
         out_sensors->mag.y = my;
         out_sensors->mag.z = mz;
         out_sensors->batt = battery;
-        ESP_LOGI(TAG, "");
-        ESP_LOGI(TAG, "");
-        ESP_LOGI(TAG, "Parsed raw sensor readings:");
-        ESP_LOGI(TAG, "  Temperature: %d", temperature);
-        ESP_LOGI(TAG, "  Acceleration: X=%d Y=%d Z=%d", ax, ay, az);
-        ESP_LOGI(TAG, "  Magnetometer: X=%d Y=%d Z=%d", mx, my, mz);
-        ESP_LOGI(TAG, "  Battery: %d mV", battery);
+
+        ESP_LOGI(TAG, "getSensorsRawUSB: success on attempt %d", attempt);
+        ESP_LOGI(TAG, "  Temperature: %u", temperature);
+        ESP_LOGI(TAG, "  Accel: X=%d  Y=%d  Z=%d", ax, ay, az);
+        ESP_LOGI(TAG, "  Mag:   X=%d  Y=%d  Z=%d", mx, my, mz);
+        ESP_LOGI(TAG, "  Battery: %u mV", battery);
+        return true; // success!
     }
-    else {
-        ESP_LOGE(TAG, "getSensorsRawUSB: Failed to decode sensor readings");
-        return false;
-    }
-    return true;
+
+    // All retries failed
+    ESP_LOGE(TAG, "getSensorsRawUSB: failed after %d retries", NUM_RETRIES);
+    return false;
 }
 
-bool getFloatAscii85Usb(float* out_value, const char* item, const char* command, const char* address) {
+bool getFloatAscii85Usb(float* out_value, const char* item, const char* command, const char* address)
+{
     if (!out_value || !command || !address) {
         ESP_LOGE(TAG, "getFloatAscii85Usb: invalid arguments");
         return false;
     }
-    // Send command
+
     char full_command[64];
     snprintf(full_command, sizeof(full_command), "%s %s", command, address);
-    send_command(full_command);
-    
-    // Wait for response (timeout after 3 seconds)
-    uint32_t start = millis();
-    while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-    if (!data_available) {
-        ESP_LOGE(TAG, "getFloatAscii85Usb: timeout waiting for data after %u ms", USB_RESPONSE_DELAY_MS);
-        return false;
+
+    for (int attempt = 1; attempt <= NUM_RETRIES; ++attempt) {
+
+        // Reset state before sending
+        data_available = false;
+        memset(rxBuff, 0, sizeof(rxBuff));
+
+        // Send the command
+        send_command(full_command);
+        ESP_LOGI(TAG, "getFloatAscii85Usb: sent '%s' (attempt %d/%d)",
+            full_command, attempt, NUM_RETRIES);
+
+        // Wait for response
+        uint32_t start = millis();
+        while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+
+        if (!data_available) {
+            ESP_LOGW(TAG, "getFloatAscii85Usb: timeout waiting for data (%u ms)", USB_RESPONSE_DELAY_MS);
+            continue; // retry
+        }
+
+        // Validate received buffer
+        if (rxBuff[0] == '\0') {
+            ESP_LOGW(TAG, "getFloatAscii85Usb: empty rxBuff");
+            continue; // retry
+        }
+
+        // Ensure command appears in response
+        const char* str_start = strstr((const char*)rxBuff, command);
+        if (!str_start) {
+            ESP_LOGW(TAG, "getFloatAscii85Usb: command '%s' not found in rxBuff", command);
+            continue; // retry
+        }
+
+        // Optional item validation (skip if wildcard)
+        if (item && strcmp(item, "***") != 0) {
+            const char* item_start = strstr((const char*)rxBuff, item);
+            if (!item_start) {
+                ESP_LOGW(TAG, "getFloatAscii85Usb: item '%s' not found in rxBuff", item);
+                continue; // retry
+            }
+        }
+
+        // Find the space after command
+        const char* val_start = strchr(str_start, ' ');
+        if (!val_start) {
+            ESP_LOGW(TAG, "getFloatAscii85Usb: missing space after command");
+            continue; // retry
+        }
+
+        // Skip spaces and address text
+		val_start += 6; // move past ...space and address
+
+        // Find end of value (CR)
+        const char* val_end = strchr(val_start, '\r');
+        if (!val_end) {
+            ESP_LOGW(TAG, "getFloatAscii85Usb: missing CR terminator");
+            continue; // retry
+        }
+
+        // Extract substring safely
+        size_t len = val_end - val_start;
+        if (len == 0 || len >= 32) {
+            ESP_LOGW(TAG, "getFloatAscii85Usb: invalid ASCII85 length %u", (unsigned)len);
+            continue; // retry
+        }
+
+        char temp[32];
+        memcpy(temp, val_start, len);
+        temp[len] = '\0';
+
+        // Convert ASCII85 string to float
+        ESP_LOGV(TAG, "getFloatAscii85Usb: converting '%s' to float", temp);
+        *out_value = ascii85_to_float(temp);
+        ESP_LOGI(TAG, "getFloatAscii85Usb: parsed %s (%s) = %f", item, address, *out_value);
+        return true;
     }
 
-    // Ensure rxBuff contains something
-    if (rxBuff[0] == '\0') {
-        ESP_LOGE(TAG, "getFloatAscii85Usb: empty rxBuff");
-        return false;
-    }
-	// Find the command in rxBuff
-    const char* str_start = strstr((const char*)rxBuff, command);
-    if (!str_start) {
-        ESP_LOGE(TAG, "getFloatAscii85Usb: command '%s' not found in rxBuff", command);
-        return false;
-    }
-	// Find the item in rxBuff
-	// Skip if item == "***" (wildcard)
-	if (strcmp(item, "***") != 0){
-		const char* item_start = strstr((const char*)rxBuff, item);
-		if (!item_start) {
-			ESP_LOGE(TAG, "getFloatAscii85Usb: item '%s' not found in rxBuff", item);
-			return false;
-		}
-	}
-    // Locate space after command
-    const char* val_start = strchr(str_start, ' ');
-    if (!val_start) {
-        ESP_LOGE(TAG, "getFloatAscii85Usb: missing space after command");
-        return false;
-    }
-	val_start += 6; // move past ...space and address
-    const char* val_end = strchr(val_start, '\r');
-    if (!val_end) {
-        ESP_LOGE(TAG, "getFloatAscii85Usb: missing CR terminator");
-        return false;
-    }
-    // Extract substring
-    size_t len = val_end - val_start;
-    if (len == 0 || len >= 32) {
-        ESP_LOGE(TAG, "getFloatAscii85Usb: invalid float string length %u", (unsigned)len);
-        return false;
-    }
-    char temp[32];
-    memcpy(temp, val_start, len);
-    temp[len] = '\0';
-    // Convert ASCII85 to float
-	ESP_LOGV(TAG, "Converting ASCII85 string '%s' to float", temp);
-    *out_value = ascii85_to_float(temp);
-	ESP_LOGV(TAG, "Parsed %s address %s: %f", item, address, *out_value);
-	return true;
+    ESP_LOGE(TAG, "getFloatAscii85Usb: failed after %d retries", NUM_RETRIES);
+    return false;
 }
