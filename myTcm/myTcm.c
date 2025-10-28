@@ -30,7 +30,7 @@ TcmAverage tcmAvg;
 // Placeholder: Calibration values
 // ------------------------------
 bool defaultCalibrations(void) {
-    tcmInfo.tempCal = (TempCalCoef){ 0.0f, 10000.0f, 0.0011238100354f, 0.0002349457073f, 0.0000000848361f, 0.0f };
+    tcmInfo.tempCal = (TempCalCoef){ 0.0f, 10000.0f, 0.0011238100354f, 0.0002349457073f, 0.0000000848361f };
     tcmInfo.accCal = (CubicAccelerometer){
         .gain = { {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} },
         .offset = { 0.0f, 0.0f, 0.0f },
@@ -80,11 +80,10 @@ float calcTempC(void)
 
     float logR = logf(R);
 
-    // Steinhart-Hart formula: 1/T = A + B*ln(R) + C*(ln(R))^2 + D*(ln(R))^3
+    // Steinhart-Hart formula: 1/T = A + B*ln(R) + C*(ln(R))^3
     float denom = tcmInfo.tempCal.TMA
         + tcmInfo.tempCal.TMB * logR
-        + tcmInfo.tempCal.TMC * logR * logR
-        + tcmInfo.tempCal.TMD * logR * logR * logR;
+        + tcmInfo.tempCal.TMC * logR * logR * logR;
 
     if (denom == 0.0f) {
         ESP_LOGE(TAG, "Denominator zero in temperature calculation");
@@ -279,35 +278,35 @@ void dispTcm() {
 
 void dispCalibrations(void) {
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Temperature Calibration: TMR=%.2f TMA=%.6f TMB=%.10f TMC=%.10f TMD=%.10f",
+    ESP_LOGI(TAG, "Temperature Calibration: TMR=%f TMA=%f TMB=%f TMC=%f",
         tcmInfo.tempCal.TMR,
         tcmInfo.tempCal.TMA,
         tcmInfo.tempCal.TMB,
-        tcmInfo.tempCal.TMC,
-        tcmInfo.tempCal.TMD);
+        tcmInfo.tempCal.TMC);
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Accelerometer Calibration: Gain Matrix=[[%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f]]",
+    ESP_LOGI(TAG, "Accelerometer Calibration: Gain Matrix=[[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]",
         tcmInfo.accCal.gain[0][0], tcmInfo.accCal.gain[0][1], tcmInfo.accCal.gain[0][2],
         tcmInfo.accCal.gain[1][0], tcmInfo.accCal.gain[1][1], tcmInfo.accCal.gain[1][2],
 		tcmInfo.accCal.gain[2][0], tcmInfo.accCal.gain[2][1], tcmInfo.accCal.gain[2][2]);
-    ESP_LOGI(TAG, "Accelerometer Calibration: Offsets=(%.2f, %.2f, %.2f)",
+    ESP_LOGI(TAG, "Accelerometer Calibration: Offsets=(%f, %f, %f)",
         tcmInfo.accCal.offset[0],
         tcmInfo.accCal.offset[1],
 		tcmInfo.accCal.offset[2]);
-    ESP_LOGI(TAG, "Accelerometer Calibration: Cubic=(%.10f, %.10f, %.10f)",
+    ESP_LOGI(TAG, "Accelerometer Calibration: Cubic=(%f, %f, %f)",
         tcmInfo.accCal.cubic[0],
 		tcmInfo.accCal.cubic[1], 
 		tcmInfo.accCal.cubic[2]);
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Magnetometer Calibration: Soft Iron Matrix=[[%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f], [%.4f, %.4f, %.4f]]",
+    ESP_LOGI(TAG, "Magnetometer Calibration: Soft Iron Matrix=[[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]",
         tcmInfo.magCal.softIron[0][0], tcmInfo.magCal.softIron[0][1], tcmInfo.magCal.softIron[0][2],
 		tcmInfo.magCal.softIron[1][0], tcmInfo.magCal.softIron[1][1], tcmInfo.magCal.softIron[1][2],
 		tcmInfo.magCal.softIron[2][0], tcmInfo.magCal.softIron[2][1], tcmInfo.magCal.softIron[2][2]);
-    ESP_LOGI(TAG, "Magnetometer Calibration: Hard Iron Offsets=(%.2f, %.2f, %.2f)",
+    ESP_LOGI(TAG, "Magnetometer Calibration: Hard Iron Offsets=(%f, %f, %f)",
         tcmInfo.magCal.hardIron[0],
 		tcmInfo.magCal.hardIron[1],
 		tcmInfo.magCal.hardIron[2]);
-    ESP_LOGI(TAG, "Magnetometer Calibration: MRF =%.2f", tcmInfo.magCal.MRF);
+    ESP_LOGI(TAG, "Magnetometer Calibration: MRF =%f", tcmInfo.magCal.MRF);
+	ESP_LOGI(TAG, "Magnetometer Calibration: TMX =%f TMY=%f TMZ=%f", tcmInfo.magCal.TMX, tcmInfo.magCal.TMY, tcmInfo.magCal.TMZ);
 }
 
 void tcmPlot(void) {
@@ -374,7 +373,7 @@ bool initTcm(void) {
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, overall_log_level);
+    esp_log_level_set(TAG, ESP_LOG_VERBOSE);//overall_log_level);
 
     resetAverages();
 	defaultCalibrations();
@@ -389,7 +388,11 @@ bool initTcm(void) {
     float junk;
     getStrUsb(tcmInfo.version, sizeof(tcmInfo.version), FIRMWARE_VERSION_CMD);
 	getStrUsb(tcmInfo.serialNum, sizeof(tcmInfo.serialNum), SERIAL_NUMBER_CMD);
-	if (!getFloatAscii85Usb(&tcmInfo.tempCal.TMO, "TMO", CALIBRATION_CMD, "06080008")) {
+    if (!getFloatAscii85Usb(&junk, "RVN13", CALIBRATION_CMD, "06000008")) {
+        ESP_LOGE(TAG, "Failed to get RVN13");
+        return false;
+    }
+    if (!getFloatAscii85Usb(&tcmInfo.tempCal.TMO, "TMO", CALIBRATION_CMD, "06080008")) {
         ESP_LOGE(TAG, "Failed to get TMO");
 		return false;
     }
@@ -521,20 +524,16 @@ bool initTcm(void) {
         ESP_LOGE(TAG, "Failed to get MRF");
         return false;
     }
-    if (!getFloatAscii85Usb(&junk,               "TMX", CALIBRATION_CMD, "06100108")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.TMX, "TMX", CALIBRATION_CMD, "06100108")) {
         ESP_LOGE(TAG, "Failed to get TMX");
         return false;
     }
-    if (!getFloatAscii85Usb(&junk,               "TMY", CALIBRATION_CMD, "06180108")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.TMY, "TMY", CALIBRATION_CMD, "06180108")) {
         ESP_LOGE(TAG, "Failed to get TMY");
         return false;
     }
-    if (!getFloatAscii85Usb(&junk,               "TMZ", CALIBRATION_CMD, "06200108")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.TMZ, "TMZ", CALIBRATION_CMD, "06200108")) {
         ESP_LOGE(TAG, "Failed to get TMZ");
-        return false;
-    }
-    if (!getFloatAscii85Usb(&junk,               "HSE", CALIBRATION_CMD, "06280108")) {
-        ESP_LOGE(TAG, "Failed to get HSE");
         return false;
     }
 

@@ -1,11 +1,10 @@
 /*
 Open Items
+Retries on initialization failures TCM USB
+Confirm raw data is received correctly............
 Send RS485 to another serial port.
 Send serial data only after averaged
-Version of calibrtion values and associted formulaes
-MRF TMX TMY TMZ????
-Confirm calibration version is 3 
-Remove tmD from TempCalCoef if not used
+MRF TMX TMY TMZ Temperature compensated Mag calibration
 READme file
 USE LEDs for information
 Robust initialize, retry if required, only retry what is necessary

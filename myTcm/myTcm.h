@@ -27,7 +27,10 @@ typedef struct {
 typedef struct {
     float softIron[3][3];  // 3x3 soft-iron correction matrix
     float hardIron[3];     // 3x1 hard-iron offset
-	float MRF;
+    float TMX;
+    float TMY;
+    float TMZ;
+    float MRF;
 } CubicMagnetometer;
 
 typedef struct {
@@ -61,7 +64,6 @@ typedef struct {
     float TMA;
     float TMB;
     float TMC;
-    float TMD;
 } TempCalCoef;
 
 typedef struct {

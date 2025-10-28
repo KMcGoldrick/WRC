@@ -400,7 +400,7 @@ bool initUsb(void)
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, overall_log_level);
+    esp_log_level_set(TAG, ESP_LOG_VERBOSE);//overall_log_level);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,
