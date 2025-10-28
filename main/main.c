@@ -1,14 +1,14 @@
 /*
 Open Items
 Retries on initialization failures TCM USB
+Robust initialize, retry if required, only retry what is necessary
+Error handling in run mode
 Confirm raw data is received correctly............
 Send RS485 to another serial port.
 Send serial data only after averaged
 MRF TMX TMY TMZ Temperature compensated Mag calibration
 READme file
 USE LEDs for information
-Robust initialize, retry if required, only retry what is necessary
-Error handling in run mode
 Timing review and optimization
 RS485
 ESP32S2

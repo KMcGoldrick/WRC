@@ -26,6 +26,7 @@ extern bool plotting_all_loops;
 
 // Other
 #define MAGIC 247
+#define NUM_RETRIES 3
 #define MAX_INT16 32767
 #define ZERO_KELVIN -273.15
 #define NUM_ITERATIONS_TO_AVERAGE 20
