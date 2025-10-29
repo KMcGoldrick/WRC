@@ -373,14 +373,18 @@ bool initTcm(void) {
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, ESP_LOG_VERBOSE);//overall_log_level);
+    esp_log_level_set(TAG, overall_log_level);
 
     resetAverages();
 	defaultCalibrations();
 
+    int loopCnt = 0;
     while (!connectDevice(TCM_PID, TCM_VID)) {
-        ESP_LOGV(TAG, "Waiting for TCM device to connect...");
-		vTaskDelay(pdMS_TO_TICKS(1000));
+        if (++loopCnt * TCM_CONNECT_DELAY_MS >= TCM_CONNECT_TIMEOUT_MS) {
+            ESP_LOGE(TAG, "TCM failed to connect.");
+            return false;
+        }
+		vTaskDelay(pdMS_TO_TICKS(TCM_CONNECT_DELAY_MS));
     }
 
 	// Get TCM Info

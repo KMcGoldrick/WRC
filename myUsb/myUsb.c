@@ -400,7 +400,7 @@ bool initUsb(void)
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, ESP_LOG_VERBOSE);//overall_log_level);
+    esp_log_level_set(TAG, overall_log_level);
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,
@@ -415,10 +415,15 @@ bool initUsb(void)
     xTaskCreatePinnedToCore(usb_event_handler_task, "usb_event_handler", 4096, NULL, 6, NULL, 0);
     xTaskCreatePinnedToCore(usb_client_task, "usb_client_task", 8192, NULL, 5, NULL, 1);
 
+    int loopCnt = 0;
     while (!usb_host_initialized) {
-		ESP_LOGV(TAG, "Waiting for USB host to initialize...");
-        vTaskDelay(pdMS_TO_TICKS(100));
+        if (++loopCnt * USB_HOST_INIT_DELAY_MS >= USB_HOST_TIMEOUT_MS) {
+            ESP_LOGE(TAG, "USB host failed to initialize.");
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(USB_HOST_INIT_DELAY_MS));
     }
+
 	ESP_LOGI(TAG, "USB host initialized");
     return true;
 
@@ -433,7 +438,7 @@ bool initUsb(void)
 
 bool connectDevice(int vid, int pid)
 {
-	ESP_LOGI(TAG, "Connecting to device VID=0x%04X PID=0x%04X", vid, pid);
+	ESP_LOGI(TAG, "Attempting to connect device VID=0x%04X PID=0x%04X", vid, pid);
     if (enumerate_device(vid, pid)) {
         if (connect_and_switch_device(client_hdl, device_desc, device_config_desc)) {
             ESP_LOGI(TAG, "Device connected and switched to CDC-ACM");
@@ -623,7 +628,7 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
 
         // Send the command
         send_command(full_command);
-        ESP_LOGI(TAG, "getFloatAscii85Usb: sent '%s' (attempt %d/%d)",
+        ESP_LOGI(TAG, "getFloatAscii85Usb: sent '%s' (try %d/%d)",
             full_command, attempt, NUM_RETRIES);
 
         // Wait for response
@@ -690,7 +695,7 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
         // Convert ASCII85 string to float
         ESP_LOGV(TAG, "getFloatAscii85Usb: converting '%s' to float", temp);
         *out_value = ascii85_to_float(temp);
-        ESP_LOGI(TAG, "getFloatAscii85Usb: parsed %s (%s) = %f", item, address, *out_value);
+        ESP_LOGI(TAG, "getFloatAscii85Usb: %s (%s) = %f", item, address, *out_value);
         return true;
     }
 
