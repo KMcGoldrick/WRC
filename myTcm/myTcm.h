@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-extern void runTcm(void);
+extern bool runTcm(void);
 extern bool initTcm(void);
 
 typedef struct {

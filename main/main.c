@@ -28,13 +28,13 @@
  // Globals
  // ----------------------------------------------------------------------
 static led_strip_handle_t led_strip;
-static bool processRunning = false; // Updated by TCM status
-static bool erase_nvs_log = false;
-static bool print_nvs_log = false;
+static bool tcmProcessOk = false; // Updated by TCM status
+static bool erase_nvs_log = false; // Set to true to erase NVS log on startup
+static bool print_nvs_log = false; // Set to true to print NVS log on startup
 static int loopCounter = 0;
 
-esp_log_level_t overall_log_level = ESP_LOG_INFO;
-bool plotting_all_loops = true;
+esp_log_level_t overall_log_level = ESP_LOG_INFO; // Default log level
+bool plotting_all_loops = true; // true: plot every loop, false: plot only averaged data
 
 int serial_plot = 3;  // 0: none, 1: heading/current, 2: roll/pitch/yaw, etc.
 
@@ -86,17 +86,20 @@ static void runLED(void)
     static bool ledState = false;
 
     uint32_t now = millis();
-    int ledInterval = processRunning ? LED_TIME_MS : LED_TIME_MS / 2;
 
-    if (now - lastToggle >= ledInterval) {
+    if (now - lastToggle >= LED_TIME_MS) {
         lastToggle = now;
         ledState = !ledState;
 
         for (int i = 0; i < NUM_LEDS; i++) {
-            if (ledState)
-                setPixelColor(i, 0, 1, 0); // green
+            if (!tcmProcessOk) {
+                // TCM error state
+                setPixelColor(i, 100, 0, 0); // red
+            }
+            else if (ledState)
+                setPixelColor(i, 0, 100, 0); // green
             else
-                setPixelColor(i, 0, 0, 0);
+				setPixelColor(i, 0, 0, 0); // off
         }
     }
 }
@@ -124,6 +127,7 @@ void app_main(void)
     ESP_LOGI(TAG, "==============================================================");
 
     // Wait to allow TCM to power up
+	ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
     vTaskDelay(pdMS_TO_TICKS(STARTUP_DELAY_MS));
 
     // Initialize peripherals
@@ -164,7 +168,7 @@ void app_main(void)
     // ------------------------------------------------------------------
     while (1) {
         runLED();
-        runTcm();
+        tcmProcessOk = runTcm();
 
         ESP_LOGV(TAG, "Looping... %d", ++loopCounter);
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));

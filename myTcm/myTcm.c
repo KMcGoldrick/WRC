@@ -104,6 +104,7 @@ float calcBattV(void) {
 // Accelerometer and Magnetometer
 // ------------------------------
 XYZ calcAcc(void) {
+	// Convert raw accelerometer values to g's
     float raw[3] = { tcmInfo.raw.acc.x / 1024.0f, tcmInfo.raw.acc.y / 1024.0f, tcmInfo.raw.acc.z / 1024.0f };
     XYZ acc = { 0 };
 
@@ -238,6 +239,8 @@ void addRawsToRawSum(void) {
 }
 
 void calcAveragesAndCopyToRaw(void) {
+	// This will average the rawSum sensor readings over the number of samples collected
+	// and copy the averaged values back to tcmInfo.raw
     tcmInfo.raw.acc.x = tcmAvg.rawSum.acc.x / tcmAvg.sampleCount;
     tcmInfo.raw.acc.y = tcmAvg.rawSum.acc.y / tcmAvg.sampleCount;
     tcmInfo.raw.acc.z = tcmAvg.rawSum.acc.z / tcmAvg.sampleCount;
@@ -310,6 +313,7 @@ void dispCalibrations(void) {
 }
 
 void tcmPlot(void) {
+	// For use with serial plotting tools like SerialPlot
     switch (serial_plot) {
     case 0:
 		printf("Serial plotting disabled (serial_plot=0).\n");
@@ -377,21 +381,24 @@ bool initTcm(void) {
 
     resetAverages();
 	defaultCalibrations();
-
+	defaultRaws();
+	
+    // Connect to TCM via USB
     int loopCnt = 0;
     while (!connectDevice(TCM_PID, TCM_VID)) {
         if (++loopCnt * TCM_CONNECT_DELAY_MS >= TCM_CONNECT_TIMEOUT_MS) {
             ESP_LOGE(TAG, "TCM failed to connect.");
             return false;
         }
-		vTaskDelay(pdMS_TO_TICKS(TCM_CONNECT_DELAY_MS));
+        vTaskDelay(pdMS_TO_TICKS(TCM_CONNECT_DELAY_MS));
     }
 
+
 	// Get TCM Info
-	// Version and Serial Number do not need error checking
-    float junk;
+    // Version and Serial Number do not need error checking
     getStrUsb(tcmInfo.version, sizeof(tcmInfo.version), FIRMWARE_VERSION_CMD);
 	getStrUsb(tcmInfo.serialNum, sizeof(tcmInfo.serialNum), SERIAL_NUMBER_CMD);
+	float junk; // Placeholder for unused values
     if (!getFloatAscii85Usb(&junk, "RVN13", CALIBRATION_CMD, "06000008")) {
         ESP_LOGE(TAG, "Failed to get RVN13");
         return false;
@@ -547,9 +554,13 @@ bool initTcm(void) {
     return true;
 }
 
-void runTcm(void) 
+bool runTcm(void) 
 {
-    getSensorsRawUSB(&tcmInfo.raw, SENSOR_READINGS_CMD);
+	bool success = getSensorsRawUSB(&tcmInfo.raw, SENSOR_READINGS_CMD);
+    if (!success) {
+        ESP_LOGE(TAG, "Failed to get raw sensor data");
+        return false;
+	}
     addRawsToRawSum();
     if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
         ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
@@ -566,4 +577,5 @@ void runTcm(void)
             tcmPlot();
         }
     }
+	return true;
 }

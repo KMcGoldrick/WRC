@@ -110,7 +110,7 @@ esp_err_t send_command(const char* cmd)
     ESP_LOGV(TAG, "Sending command: %s", cmd);
 	data_available = false;
     if (cdc_hdl == NULL) {
-        ESP_LOGE(TAG, "CDC handle not initialized");
+        ESP_LOGE(TAG, "send_command CDC handle not initialized");
         return ESP_FAIL;
     }
 
@@ -204,7 +204,7 @@ bool enumerate_device(int vid, int pid)
         err = usb_host_get_device_descriptor(dev_hdl, &dev_desc);
         if (err == ESP_OK) {
             if (dev_desc->idVendor == vid && dev_desc->idProduct == pid) {
-                ESP_LOGI(TAG, "VID %d PID %d device found at address %d", vid, pid, addr);
+                ESP_LOGI(TAG, "VID=0x%04X PID=0x%04X device found at address %d", vid, pid, addr);
                 device_dev_hdl = dev_hdl;
                 device_desc = dev_desc;
             }
