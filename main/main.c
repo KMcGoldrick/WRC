@@ -1,15 +1,22 @@
 /*
- * Open Items
- * -----------
- * - Error handling in run mode
- * - Confirm raw data is received correctly
- * - Send RS485 to another serial port
- * - Send serial data only after averaging
- * - MRF TMX TMY TMZ Temperature compensated Mag calibration
- * - README file
- * - Timing review and optimization
- * - RS485, Packaging, Cabling
- */
+* LED
+* Cycles through colors on startup
+* Flashes red if USB init error
+* Flashes yellow if TCM init error
+* Blinks green when running normally
+* Solid red if TCM error
+* 
+* Open Items
+* -----------
+* - Error handling in run mode
+* - Confirm raw data is received correctly
+* - Send RS485 to another serial port
+* - Send serial data only after averaging
+* - MRF TMX TMY TMZ Temperature compensated Mag calibration
+* - README file
+* - Timing review and optimization
+* - RS485, Packaging, Cabling
+*/
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -28,7 +35,7 @@
  // Globals
  // ----------------------------------------------------------------------
 static led_strip_handle_t led_strip;
-static bool tcmProcessOk = false; // Updated by TCM status
+static bool tcmProcessOk = true; // Updated by TCM status
 static bool erase_nvs_log = false; // Set to true to erase NVS log on startup
 static bool print_nvs_log = false; // Set to true to print NVS log on startup
 static int loopCounter = 0;
