@@ -2,6 +2,7 @@
 extern esp_log_level_t overall_log_level;
 extern int serial_plot;
 extern bool plotting_all_loops;
+
 // Hardware
 #define LOW 0
 #define HIGH 1
@@ -13,7 +14,7 @@ extern bool plotting_all_loops;
 #endif
 #define NUM_LEDS 8
 
-// Memory
+// Non-volatile Storage
 #define NVS_LOG_SIZE 1024
 
 // Timing
@@ -28,8 +29,9 @@ extern bool plotting_all_loops;
 
 // Other
 #define MAGIC 247
-#define NUM_RETRIES 3
 #define MAX_INT16 32767
+#define NUM_USB_RETRIES 3
+#define DEFAULT_TEMP 0.0f
 #define ZERO_KELVIN -273.15
 #define NUM_ITERATIONS_TO_AVERAGE 20
 #define DECLINATION_DEG  -7.66f  // Magnetic declination for Grenville NC

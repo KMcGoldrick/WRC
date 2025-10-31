@@ -4,12 +4,10 @@
 * Flashes red if USB init error
 * Flashes yellow if TCM init error
 * Blinks green when running normally
-* Solid red if TCM error
+* Solid red if TCM runtime error
 * 
 * Open Items
 * -----------
-* - Error handling in run mode
-* - Confirm raw data is received correctly
 * - Send RS485 to another serial port
 * - Send serial data only after averaging
 * - MRF TMX TMY TMZ Temperature compensated Mag calibration
@@ -40,10 +38,12 @@ static bool erase_nvs_log = false; // Set to true to erase NVS log on startup
 static bool print_nvs_log = false; // Set to true to print NVS log on startup
 static int loopCounter = 0;
 
+// Available log levels: ESP_LOG_NONE, ESP_LOG_ERROR, ESP_LOG_WARN, ESP_LOG_INFO, ESP_LOG_DEBUG, ESP_LOG_VERBOSE
 esp_log_level_t overall_log_level = ESP_LOG_INFO; // Default log level
-bool plotting_all_loops = true; // true: plot every loop, false: plot only averaged data
 
-int serial_plot = 3;  // 0: none, 1: heading/current, 2: roll/pitch/yaw, etc.
+// Plotting (RS485) options
+bool plotting_all_loops = true; // true: plot every loop, false: plot only averaged data
+int serial_plot = 3;  // 0: none, 1: heading/current, 2: roll/pitch/yaw, etc. (see myTcm.c tcmPlot() for details)
 
 // ----------------------------------------------------------------------
 // LED Helpers

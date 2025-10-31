@@ -60,22 +60,22 @@ float calcTempC(void)
 {
     // Ensure calibration TMR is non-zero
     if (tcmInfo.tempCal.TMR == 0.0f) {
-        ESP_LOGE(TAG, "Calibration error: TMR is zero");
-        return -273.15f; // Return absolute zero on error
+        ESP_LOGW(TAG, "Calibration error: TMR is zero");
+        return DEFAULT_TEMP; // Return absolute zero on error
     }
 
     // Compute resistance ratio
     float raw = (float)tcmInfo.raw.temp;
     float denom_temp = (65535.0f - raw);
     if (denom_temp == 0.0f) {
-        ESP_LOGE(TAG, "Division by zero in resistance calculation");
-        return -273.15f;
+        ESP_LOGW(TAG, "Division by zero in resistance calculation");
+        return DEFAULT_TEMP;
     }
 
     float R = (raw * tcmInfo.tempCal.TMR) / denom_temp;
     if (R <= 0.0f) {
-        ESP_LOGE(TAG, "Invalid resistance ratio R <= 0");
-        return -273.15f;
+        ESP_LOGW(TAG, "Invalid resistance ratio R <= 0");
+        return DEFAULT_TEMP;
     }
 
     float logR = logf(R);
@@ -86,8 +86,8 @@ float calcTempC(void)
         + tcmInfo.tempCal.TMC * logR * logR * logR;
 
     if (denom == 0.0f) {
-        ESP_LOGE(TAG, "Denominator zero in temperature calculation");
-        return -273.15f;
+        ESP_LOGW(TAG, "Denominator zero in temperature calculation");
+        return DEFAULT_TEMP;
     }
 
     float tempK = 1.0f / denom;       // Temperature in Kelvin
@@ -195,7 +195,7 @@ float speedFromTilt(void) {
     */
 
     ESP_LOGE(TAG, "Speed from tilt not implemented");
-    return 24.7f;
+    return (float)(MAGIC/10.0);
 }
 
 Velocity calcCurrent(void) {
@@ -556,6 +556,8 @@ bool initTcm(void) {
 
 bool runTcm(void) 
 {
+    //Note: The only calculation that can be in error is temperature.
+    //      This will be handled by using a defaulut value 
 	bool success = getSensorsRawUSB(&tcmInfo.raw, SENSOR_READINGS_CMD);
     if (!success) {
         ESP_LOGE(TAG, "Failed to get raw sensor data");

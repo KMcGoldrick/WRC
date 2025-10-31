@@ -455,7 +455,7 @@ bool getStrUsb(char* save_as, size_t save_size, const char* command)
         return false;
     }
 
-    for (int attempt = 0; attempt < NUM_RETRIES; ++attempt) {
+    for (int attempt = 0; attempt < NUM_USB_RETRIES; ++attempt) {
 
         // Clear output and temp buffers
         memset(save_as, 0, save_size);
@@ -464,7 +464,7 @@ bool getStrUsb(char* save_as, size_t save_size, const char* command)
 
         // Send command
         send_command(command);
-        ESP_LOGI(TAG, "getStrUsb: sent command '%s' (try %d/%d)", command, attempt + 1, NUM_RETRIES);
+        ESP_LOGI(TAG, "getStrUsb: sent command '%s' (try %d/%d)", command, attempt + 1, NUM_USB_RETRIES);
 
         // Wait for response with timeout
         uint32_t start = millis();
@@ -518,7 +518,7 @@ bool getStrUsb(char* save_as, size_t save_size, const char* command)
         return true; // success
     }
 
-    ESP_LOGE(TAG, "getStrUsb: failed after %d retries", NUM_RETRIES);
+    ESP_LOGE(TAG, "getStrUsb: failed after %d retries", NUM_USB_RETRIES);
     return false;
 }
 
@@ -529,7 +529,7 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
         return false;
     }
 
-    for (int attempt = 1; attempt <= NUM_RETRIES; ++attempt) {
+    for (int attempt = 1; attempt <= NUM_USB_RETRIES; ++attempt) {
 
         // Reset state
         data_available = false;
@@ -538,7 +538,7 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
         // Send command
         send_command(command);
         ESP_LOGI(TAG, "getSensorsRawUSB: sent command '%s' (attempt %d/%d)",
-            command, attempt, NUM_RETRIES);
+            command, attempt, NUM_USB_RETRIES);
 
         // Wait for response with timeout
         uint32_t start = millis();
@@ -606,7 +606,7 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
     }
 
     // All retries failed
-    ESP_LOGE(TAG, "getSensorsRawUSB: failed after %d retries", NUM_RETRIES);
+    ESP_LOGE(TAG, "getSensorsRawUSB: failed after %d retries", NUM_USB_RETRIES);
     return false;
 }
 
@@ -620,7 +620,7 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
     char full_command[64];
     snprintf(full_command, sizeof(full_command), "%s %s", command, address);
 
-    for (int attempt = 1; attempt <= NUM_RETRIES; ++attempt) {
+    for (int attempt = 1; attempt <= NUM_USB_RETRIES; ++attempt) {
 
         // Reset state before sending
         data_available = false;
@@ -629,7 +629,7 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
         // Send the command
         send_command(full_command);
         ESP_LOGI(TAG, "getFloatAscii85Usb: sent '%s' (try %d/%d)",
-            full_command, attempt, NUM_RETRIES);
+            full_command, attempt, NUM_USB_RETRIES);
 
         // Wait for response
         uint32_t start = millis();
@@ -699,6 +699,6 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
         return true;
     }
 
-    ESP_LOGE(TAG, "getFloatAscii85Usb: failed after %d retries", NUM_RETRIES);
+    ESP_LOGE(TAG, "getFloatAscii85Usb: failed after %d retries", NUM_USB_RETRIES);
     return false;
 }
