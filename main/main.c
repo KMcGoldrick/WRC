@@ -8,9 +8,9 @@
 * 
 * Open Items
 * -----------
+* - WS2812 vs SK6812 LED model selection
 * - Send RS485 to another serial port
 * - Send serial data only after averaging
-* - MRF TMX TMY TMZ Temperature compensated Mag calibration
 * - README file
 * - Timing review and optimization
 * - RS485, Packaging, Cabling

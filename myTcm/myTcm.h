@@ -27,10 +27,8 @@ typedef struct {
 typedef struct {
     float softIron[3][3];  // 3x3 soft-iron correction matrix
     float hardIron[3];     // 3x1 hard-iron offset
-    float TMX;
-    float TMY;
-    float TMZ;
-    float MRF;
+    float tempRef;         // Reference temperature for compensation
+    float tempSlope[3];    // Temperature compensation slopes for X, Y, Z
 } CubicMagnetometer;
 
 typedef struct {

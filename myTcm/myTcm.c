@@ -144,6 +144,39 @@ XYZ calcMag(void) {
     return (XYZ) { calibrated[0], calibrated[1], calibrated[2] };
 }
 
+XYZ calcTempCompMag(void) {
+    float raw[3] = { tcmInfo.raw.mag.x, tcmInfo.raw.mag.y, tcmInfo.raw.mag.z };
+    float corrected[3], calibrated[3], tempComp[3];
+    float temp = tcmInfo.raw.temp;
+
+    // Clamp temperature to calibration range [-20, 50]
+    if (temp < -20.0f) temp = -20.0f;
+    if (temp > 50.0f) temp = 50.0f;
+
+    // Step 1: apply hard-iron offset
+    for (int i = 0; i < 3; i++) {
+        corrected[i] = raw[i] + tcmInfo.magCal.hardIron[i];
+    }
+
+    // Step 2: apply soft-iron correction matrix
+    for (int i = 0; i < 3; i++) {
+        calibrated[i] = 0.0f;
+        for (int j = 0; j < 3; j++) {
+            calibrated[i] += tcmInfo.magCal.softIron[i][j] * corrected[j];
+        }
+    }
+
+    // Step 3: apply temperature compensation
+    // M_corr = M_base + (T - T_ref) * slope
+    float deltaT = temp - tcmInfo.magCal.tempRef;
+    for (int i = 0; i < 3; i++) {
+        tempComp[i] = calibrated[i] + deltaT * tcmInfo.magCal.tempSlope[i];
+    }
+
+    // Step 4: return final compensated result
+    return (XYZ) { tempComp[0], tempComp[1], tempComp[2] };
+}
+
 // ------------------------------
 // Roll-Pitch-Yaw Calculation
 // ------------------------------
@@ -212,7 +245,7 @@ void calcTcm(void) {
     tcmInfo.scaled.batt = calcBattV();
     tcmInfo.scaled.temp = calcTempC();
     tcmInfo.scaled.acc = calcAcc();
-    tcmInfo.scaled.mag = calcMag();
+    tcmInfo.scaled.mag = calcTempCompMag();
     tcmInfo.orientation = calcRPY();
     tcmInfo.speed = speedFromTilt();
     tcmInfo.headingDeg = calcHeading();
@@ -308,8 +341,11 @@ void dispCalibrations(void) {
         tcmInfo.magCal.hardIron[0],
 		tcmInfo.magCal.hardIron[1],
 		tcmInfo.magCal.hardIron[2]);
-    ESP_LOGI(TAG, "Magnetometer Calibration: MRF =%f", tcmInfo.magCal.MRF);
-	ESP_LOGI(TAG, "Magnetometer Calibration: TMX =%f TMY=%f TMZ=%f", tcmInfo.magCal.TMX, tcmInfo.magCal.TMY, tcmInfo.magCal.TMZ);
+    ESP_LOGI(TAG, "Magnetometer Calibration: MRF =%f", tcmInfo.magCal.tempRef);
+	ESP_LOGI(TAG, "Magnetometer Calibration: TMX =%f TMY=%f TMZ=%f", 
+        tcmInfo.magCal.tempSlope[0], 
+        tcmInfo.magCal.tempSlope[1], 
+        tcmInfo.magCal.tempSlope[2]);
 }
 
 void tcmPlot(void) {
@@ -531,19 +567,19 @@ bool initTcm(void) {
         ESP_LOGE(TAG, "Failed to get MZV");
 		return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.MRF, "MRF", CALIBRATION_CMD, "06080108")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.tempRef, "MRF", CALIBRATION_CMD, "06080108")) {
         ESP_LOGE(TAG, "Failed to get MRF");
         return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.TMX, "TMX", CALIBRATION_CMD, "06100108")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.tempSlope[0], "TMX", CALIBRATION_CMD, "06100108")) {
         ESP_LOGE(TAG, "Failed to get TMX");
         return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.TMY, "TMY", CALIBRATION_CMD, "06180108")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.tempSlope[1], "TMY", CALIBRATION_CMD, "06180108")) {
         ESP_LOGE(TAG, "Failed to get TMY");
         return false;
     }
-    if (!getFloatAscii85Usb(&tcmInfo.magCal.TMZ, "TMZ", CALIBRATION_CMD, "06200108")) {
+    if (!getFloatAscii85Usb(&tcmInfo.magCal.tempSlope[2], "TMZ", CALIBRATION_CMD, "06200108")) {
         ESP_LOGE(TAG, "Failed to get TMZ");
         return false;
     }
