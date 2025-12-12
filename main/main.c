@@ -1,17 +1,10 @@
 /*
-* LED
-* Cycles through colors on startup
-* Flashes red if USB init error
-* Flashes yellow if TCM init error
-* Blinks green when running normally
-* Solid red if TCM runtime error
 * 
 * Open Items
 * -----------
 * - WS2812 vs SK6812 LED model selection
 * - Send RS485 to another serial port
 * - Send serial data only after averaging
-* - README file
 * - Timing review and optimization
 * - RS485, Packaging, Cabling
 */

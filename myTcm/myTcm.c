@@ -299,10 +299,10 @@ void dispTcm() {
     ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
     ESP_LOGI(TAG, "Serial Number: %s", tcmInfo.serialNum);
     ESP_LOGI(TAG, "Battery: %.2f V", tcmInfo.scaled.batt);
-    ESP_LOGI(TAG, "Temperature: %.2f C", tcmInfo.scaled.temp);
-    ESP_LOGI(TAG, "Acceleration (g): X=%.2f Y=%.2f Z=%.2f",
+    ESP_LOGI(TAG, "Temperature: %.3f C", tcmInfo.scaled.temp);
+    ESP_LOGI(TAG, "Acceleration (g): X=%.3f Y=%.3f Z=%.3f",
         tcmInfo.scaled.acc.x, tcmInfo.scaled.acc.y, tcmInfo.scaled.acc.z);
-    ESP_LOGI(TAG, "Magnetometer (mG): X=%.2f Y=%.2f Z=%.2f",
+    ESP_LOGI(TAG, "Magnetometer (mG): X=%.3f Y=%.3f Z=%.3f",
         tcmInfo.scaled.mag.x, tcmInfo.scaled.mag.y, tcmInfo.scaled.mag.z);
     ESP_LOGI(TAG, "Orientation (rad): Roll=%.2f Pitch=%.2f Yaw=%.2f",
         tcmInfo.orientation.rollRad, tcmInfo.orientation.pitchRad, tcmInfo.orientation.yawRad);
