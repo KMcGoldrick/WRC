@@ -1,20 +1,22 @@
 /*
-* 
-* Open Items
-* -----------
-* - WS2812 vs SK6812 LED model selection
-* - Send RS485 to another serial port
-* - Send serial data only after averaging
-* - Timing review and optimization
-* - RS485, Packaging, Cabling
-*/
+ * main.c
+ *
+ * WRC system main application
+ * Supports:
+ *  - Dual USB (TCM + Logging)
+ *  - LED strip status
+ *  - PSRAM info display
+ *  - Configurable NVS log and startup behavior
+ */
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_log.h"
-#include "led_strip.h"
+#include "esp_heap_caps.h"
+#include "esp_psram.h"
 
+#include "led_strip.h"
 #include "WRCDefs.h"
 #include "myNvs.h"
 #include "myTcm.h"
@@ -26,29 +28,22 @@
  // Globals
  // ----------------------------------------------------------------------
 static led_strip_handle_t led_strip;
-static bool tcmProcessOk = true; // Updated by TCM status
-static bool erase_nvs_log = false; // Set to true to erase NVS log on startup
-static bool print_nvs_log = false; // Set to true to print NVS log on startup
+static bool tcmProcessOk = true;
 static int loopCounter = 0;
 
-// Available log levels: ESP_LOG_NONE, ESP_LOG_ERROR, ESP_LOG_WARN, ESP_LOG_INFO, ESP_LOG_DEBUG, ESP_LOG_VERBOSE
-esp_log_level_t overall_log_level = ESP_LOG_INFO; // Default log level
-
-// Plotting (RS485) options
-bool plotting_all_loops = true; // true: plot every loop, false: plot only averaged data
-int serial_plot = 3;  // 0: none, 1: heading/current, 2: roll/pitch/yaw, etc. (see myTcm.c tcmPlot() for details)
+// USB selection
+static bool useTCMUsb = false;
+static bool useLogUsb = false;
 
 // ----------------------------------------------------------------------
 // LED Helpers
 // ----------------------------------------------------------------------
-static void setPixelColor(int idx, uint8_t r, uint8_t g, uint8_t b)
-{
+static void setPixelColor(int idx, uint8_t r, uint8_t g, uint8_t b) {
     led_strip_set_pixel(led_strip, idx, r, g, b);
     led_strip_refresh(led_strip);
 }
 
-static void initLED(void)
-{
+static void initLED(void) {
     led_strip_config_t strip_config = {
         .strip_gpio_num = RGB_PIN,
         .max_leds = NUM_LEDS,
@@ -63,9 +58,8 @@ static void initLED(void)
     ESP_LOGI(TAG, "LED strip initialized with %d LEDs on GPIO %d", NUM_LEDS, RGB_PIN);
 }
 
-static void sequenceLED(void)
-{
-    // Non-blocking startup indicator (~600 ms total)
+static void sequenceLED(void) {
+    // Non-blocking startup indicator
     for (int color = 0; color < 3; ++color) {
         for (int i = 0; i < NUM_LEDS; i++) {
             uint8_t r = (color == 0) ? 255 : 0;
@@ -80,26 +74,25 @@ static void sequenceLED(void)
         setPixelColor(i, 0, 0, 0);
 }
 
-static void runLED(void)
-{
+static void runLED(void) {
     static uint32_t lastToggle = 0;
     static bool ledState = false;
 
-    uint32_t now = millis();
-
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
     if (now - lastToggle >= LED_TIME_MS) {
         lastToggle = now;
         ledState = !ledState;
 
         for (int i = 0; i < NUM_LEDS; i++) {
             if (!tcmProcessOk) {
-                // TCM error state
-                setPixelColor(i, 100, 0, 0); // red
+                setPixelColor(i, 100, 0, 0); // TCM error = red
             }
-            else if (ledState)
+            else if (ledState) {
                 setPixelColor(i, 0, 100, 0); // green
-            else
-				setPixelColor(i, 0, 0, 0); // off
+            }
+            else {
+                setPixelColor(i, 0, 0, 0);   // off
+            }
         }
     }
 }
@@ -107,10 +100,11 @@ static void runLED(void)
 // ----------------------------------------------------------------------
 // Application Entry Point
 // ----------------------------------------------------------------------
-void app_main(void)
-{
-    esp_log_level_set("*", overall_log_level);
-    esp_log_level_set(TAG, overall_log_level);
+void app_main(void) {
+    esp_rom_printf(">>> APP MAIN STARTED <<<\n");
+
+    esp_log_level_set("*", ESP_LOG_INFO);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
 
     ESP_LOGI(TAG, "==============================================================");
     ESP_LOGI(TAG, "  WRC System Startup");
@@ -124,40 +118,34 @@ void app_main(void)
     ESP_LOGI(TAG, "  Target: Unknown ESP32 variant");
 #endif
 
-    ESP_LOGI(TAG, "==============================================================");
+    ESP_LOGI(TAG, "  PSRAM available: %d bytes", esp_psram_get_size());
+    ESP_LOGI(TAG, "  Free PSRAM: %d bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
-    // Wait to allow TCM to power up
-	ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
-    vTaskDelay(pdMS_TO_TICKS(STARTUP_DELAY_MS));
+    ESP_LOGI(TAG, "==============================================================");
 
     // Initialize peripherals
     initLED();
     sequenceLED();
 
-    initNvsLog(erase_nvs_log, print_nvs_log);
-    appendNvsLog("\n......Start......\n");
-
-    if (!initUsb()) {
-        ESP_LOGE(TAG, "USB Initialization Failed");
-        appendNvsLog("USB Initialization Failed\n");
-        // Flash red LED for error state
-        while (1) {
-            setPixelColor(0, 255, 0, 0);
-            vTaskDelay(pdMS_TO_TICKS(200));
-            setPixelColor(0, 0, 0, 0);
-            vTaskDelay(pdMS_TO_TICKS(200));
+    // Initialize dual USB (TCM + Logging)
+    if (useTCMUsb || useLogUsb) {
+        if (!initUsbDual()) {
+            ESP_LOGE(TAG, "USB initialization failed");
+            while (1) {
+                setPixelColor(0, 255, 0, 0);
+                vTaskDelay(pdMS_TO_TICKS(200));
+                setPixelColor(0, 0, 0, 0);
+                vTaskDelay(pdMS_TO_TICKS(200));
+            }
         }
     }
 
-    if (!initTcm()) {
-        ESP_LOGE(TAG, "TCM Initialization Failed");
-        appendNvsLog("TCM Initialization Failed\n");
-        // Flash yellow LED for error
-        while (1) {
-            setPixelColor(0, 255, 255, 0);
-            vTaskDelay(pdMS_TO_TICKS(200));
-            setPixelColor(0, 0, 0, 0);
-            vTaskDelay(pdMS_TO_TICKS(200));
+    if (useTCMUsb) {
+        ESP_LOGI(TAG, "Waiting for TCM USB device...");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        if (!connectDevice(TCM_VID, TCM_PID)) {
+            ESP_LOGE(TAG, "TCM device connection failed");
+            tcmProcessOk = false;
         }
     }
 
@@ -168,9 +156,31 @@ void app_main(void)
     // ------------------------------------------------------------------
     while (1) {
         runLED();
-        tcmProcessOk = runTcm();
 
-        ESP_LOGV(TAG, "Looping... %d", ++loopCounter);
+        ESP_LOGI(TAG, "Loop %d", ++loopCounter);
+
+        if (useTCMUsb) {
+            // Fetch TCM sensor data
+            rawSensors sensor;
+            if (getSensorsRawUSB(true, &sensor, "GSR")) {
+                tcmProcessOk = true;
+                ESP_LOGI(TAG, "TCM Temp=%u Acc=(%d,%d,%d) Mag=(%d,%d,%d) Batt=%u",
+                    sensor.temp, sensor.acc.x, sensor.acc.y, sensor.acc.z,
+                    sensor.mag.x, sensor.mag.y, sensor.mag.z, sensor.batt);
+            }
+            else {
+                tcmProcessOk = false;
+                ESP_LOGW(TAG, "TCM read failed");
+            }
+        }
+
+        if (useLogUsb) {
+            char logMsg[64];
+            if (getStrUsb(false, logMsg, sizeof(logMsg))) {
+                ESP_LOGI(TAG, "LOG USB: %s", logMsg);
+            }
+        }
+
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
     }
 }
