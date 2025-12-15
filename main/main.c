@@ -1,4 +1,4 @@
-/*
+﻿/*
  * main.c
  *
  * WRC system main application
@@ -22,11 +22,18 @@
 #include "myTcm.h"
 #include "myUsb.h"
 
+#include "driver/uart.h"
+#include "driver/gpio.h"
+
 #define TAG "WRC"
 
- // ----------------------------------------------------------------------
- // Globals
- // ----------------------------------------------------------------------
+// Pins for TCM UART
+#define PIN_UART_TX 19
+#define PIN_UART_RX 20
+
+// ----------------------------------------------------------------------
+// Globals
+// ----------------------------------------------------------------------
 static led_strip_handle_t led_strip;
 static bool tcmProcessOk = true;
 static int loopCounter = 0;
