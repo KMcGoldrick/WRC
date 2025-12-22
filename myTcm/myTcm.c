@@ -25,6 +25,8 @@
 // Global TCM info
 TcmInfo tcmInfo;
 TcmAverage tcmAvg;
+int serial_plot = 3;
+
 
 // ------------------------------
 // Placeholder: Calibration values
@@ -402,7 +404,7 @@ void tcmPlot(void) {
 // ------------------------------
 // Initialization and Run
 // ------------------------------
-bool initTcm(void) {
+bool initTcm(int overall_log_level) {
     /*
     * Levels available:
         •	ESP_LOG_NONE
@@ -590,7 +592,7 @@ bool initTcm(void) {
     return true;
 }
 
-bool runTcm(void) 
+bool runTcm(bool plotting_all_loops)
 {
     //Note: The only calculation that can be in error is temperature.
     //      This will be handled by using a defaulut value 

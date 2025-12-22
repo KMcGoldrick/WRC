@@ -122,7 +122,7 @@ void appendNvsLog(const char* data) {
     ESP_LOGI(TAG, "Appended %d bytes", (int)data_len);
 }
 
-void initNvsLog(bool erase, bool printLog) {
+void initNvsLog(bool erase, bool printLog, int overall_log_level) {
     /*
     * Levels available:
         •	ESP_LOG_NONE

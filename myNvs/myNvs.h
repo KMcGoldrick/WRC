@@ -8,4 +8,4 @@
 // NVS Logging Functions
 // ------------------------------
 void appendNvsLog(const char* data);
-void initNvsLog(bool erase, bool printLog);
+void initNvsLog(bool erase, bool printLog, int overall_log_level);
