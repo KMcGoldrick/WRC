@@ -2,7 +2,7 @@
  * main.c
  *
  * WRC system main application
- * Supports:
+ * Supports: 
  *  - Dual USB (TCM + Logging)
  *  - LED strip status
  *  - PSRAM info display
