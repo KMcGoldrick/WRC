@@ -136,7 +136,7 @@ void app_main(void) {
 
     // Initialize dual USB (TCM + Logging)
     if (useTCMUsb || useLogUsb) {
-        if (!initUsbDual()) {
+        if (!initUsb()) {
             ESP_LOGE(TAG, "USB initialization failed");
             while (1) {
                 setPixelColor(0, 255, 0, 0);
@@ -169,7 +169,7 @@ void app_main(void) {
         if (useTCMUsb) {
             // Fetch TCM sensor data
             rawSensors sensor;
-            if (getSensorsRawUSB(true, &sensor, "GSR")) {
+            if (getSensorsRawUSB(&sensor, "GSR")) {
                 tcmProcessOk = true;
                 ESP_LOGI(TAG, "TCM Temp=%u Acc=(%d,%d,%d) Mag=(%d,%d,%d) Batt=%u",
                     sensor.temp, sensor.acc.x, sensor.acc.y, sensor.acc.z,
@@ -181,12 +181,14 @@ void app_main(void) {
             }
         }
 
+        /*
         if (useLogUsb) {
             char logMsg[64];
             if (getStrUsb(false, logMsg, sizeof(logMsg))) {
                 ESP_LOGI(TAG, "LOG USB: %s", logMsg);
             }
         }
+        */
 
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
     }

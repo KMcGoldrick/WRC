@@ -25,8 +25,6 @@
 // Global TCM info
 TcmInfo tcmInfo;
 TcmAverage tcmAvg;
-int serial_plot = 3;
-
 
 // ------------------------------
 // Placeholder: Calibration values
@@ -352,6 +350,7 @@ void dispCalibrations(void) {
 
 void tcmPlot(void) {
 	// For use with serial plotting tools like SerialPlot
+    int serial_plot = 0;
     switch (serial_plot) {
     case 0:
 		printf("Serial plotting disabled (serial_plot=0).\n");

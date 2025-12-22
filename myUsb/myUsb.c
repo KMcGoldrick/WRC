@@ -3,6 +3,7 @@
 // -----------------------------------------------------------
 
 // Standard C Library
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +35,6 @@ static char rxBuff[128];
 static bool data_available = false;
 
 static cdc_acm_dev_hdl_t tcm_cdc_hdl = NULL;
-static cdc_acm_dev_hdl_t log_cdc_hdl = NULL;
 
 static usb_host_client_handle_t client_hdl = NULL;
 static bool usb_host_initialized = false;
@@ -44,6 +44,12 @@ static bool usb_host_initialized = false;
 // ------------------------------
 unsigned long millis(void) {
     return (unsigned long)(esp_timer_get_time() / 1000ULL);
+}
+
+static uint8_t hex_to_byte(const char* hex)
+{
+    char buf[3] = { hex[0], hex[1], 0 };
+    return (uint8_t)strtol(buf, NULL, 16);
 }
 
 // Decode ASCII85 string to float
@@ -57,6 +63,51 @@ float ascii85_to_float(const char str[5]) {
     u.u = value;
     return u.f;
 }
+
+// Decode GSR ASCII string into individual variables
+int decode_gsr_values(const char* response,
+    uint16_t* temperature,     // Unsigned ADC
+    int16_t* ax, int16_t* ay, int16_t* az,  // Signed accel
+    int16_t* mx, int16_t* my, int16_t* mz,  // Signed mag
+    uint16_t* battery)          // Unsigned ADC
+{
+    if (!response) return -1;
+
+    // Skip optional "GSR" and whitespace/colon
+    const char* p = strstr(response, "GSR");
+    if (p) {
+        p += 3;
+        while (*p == ' ' || *p == ':') p++;
+    }
+    else {
+        p = response;
+    }
+
+    // There should be at least 40 ASCII hex chars (20 bytes)
+    size_t len = strlen(p);
+    if (len < 40) return -2;
+
+    // Decode 10 channels (each 4 hex chars = 2 bytes)
+    uint16_t raw[10];
+    for (int i = 0; i < 10; i++) {
+        uint8_t lo = hex_to_byte(p + i * 4);
+        uint8_t hi = hex_to_byte(p + i * 4 + 2);
+        raw[i] = (uint16_t)((hi << 8) | lo);
+    }
+
+    // Assign to correct types
+    if (temperature) *temperature = raw[0];
+    if (ax) *ax = (int16_t)raw[1];
+    if (ay) *ay = (int16_t)raw[2];
+    if (az) *az = (int16_t)raw[3];
+    if (mx) *mx = (int16_t)raw[4];
+    if (my) *my = (int16_t)raw[5];
+    if (mz) *mz = (int16_t)raw[6];
+    if (battery) *battery = raw[7];
+
+    return 0;
+}
+
 
 // ------------------------------
 // CDC-ACM callbacks
@@ -150,7 +201,7 @@ bool initUsb(void) {
 // ------------------------------
 // Device enumeration and CDC connect
 // ------------------------------
-static bool enumerate_and_connect(int vid, int pid, bool is_tcm) {
+static bool enumerate_and_connect(int vid, int pid) {
     uint8_t addr_list[8];
     int addr_count = 0;
 
@@ -165,9 +216,9 @@ static bool enumerate_and_connect(int vid, int pid, bool is_tcm) {
         if (usb_host_get_device_descriptor(dev_hdl, &dev_desc) != ESP_OK) continue;
 
         if (dev_desc->idVendor == vid && dev_desc->idProduct == pid) {
-            cdc_acm_dev_hdl_t* handle = is_tcm ? &tcm_cdc_hdl : &log_cdc_hdl;
+            cdc_acm_dev_hdl_t* handle = &tcm_cdc_hdl;
             if (cdc_acm_host_open(dev_desc->idVendor, dev_desc->idProduct, 0, &dev_config, handle) == ESP_OK) {
-                ESP_LOGI(TAG, "%s device connected", is_tcm ? "TCM" : "LOG");
+                ESP_LOGI(TAG, "TCM device connected");
                 return true;
             }
         }
@@ -178,16 +229,16 @@ static bool enumerate_and_connect(int vid, int pid, bool is_tcm) {
     return false;
 }
 
-bool connectDevice(int vid, int pid, bool is_tcm) {
-    return enumerate_and_connect(vid, pid, is_tcm);
+bool connectDevice(int vid, int pid) {
+    return enumerate_and_connect(vid, pid);
 }
 
 // ------------------------------
 // USB Send Command
 // ------------------------------
-esp_err_t send_command(bool is_tcm, const char* cmd) {
+esp_err_t send_command(const char* cmd) {
     data_available = false;
-    cdc_acm_dev_hdl_t handle = is_tcm ? tcm_cdc_hdl : log_cdc_hdl;
+    cdc_acm_dev_hdl_t handle = tcm_cdc_hdl;
     if (!handle) return ESP_FAIL;
 
     char buf[64];
@@ -198,7 +249,7 @@ esp_err_t send_command(bool is_tcm, const char* cmd) {
 // ------------------------------
 // Get string response from USB
 // ------------------------------
-bool getStrUsb(bool is_tcm, char* save_as, size_t save_size, const char* command) {
+bool getStrUsb(char* save_as, size_t save_size, const char* command) {
     if (!save_as || !command || save_size == 0) return false;
 
     for (int attempt = 0; attempt < NUM_USB_RETRIES; ++attempt) {
@@ -206,7 +257,7 @@ bool getStrUsb(bool is_tcm, char* save_as, size_t save_size, const char* command
         data_available = false;
         memset(rxBuff, 0, sizeof(rxBuff));
 
-        if (send_command(is_tcm, command) != ESP_OK) continue;
+        if (send_command(command) != ESP_OK) continue;
 
         uint32_t start = millis();
         while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
@@ -240,7 +291,7 @@ bool getStrUsb(bool is_tcm, char* save_as, size_t save_size, const char* command
 // ------------------------------
 // Get ASCII85 float from USB
 // ------------------------------
-bool getFloatAscii85Usb(bool is_tcm, float* out_value, const char* item, const char* command, const char* address) {
+bool getFloatAscii85Usb(float* out_value, const char* item, const char* command, const char* address) {
     if (!out_value || !command || !address) return false;
 
     char full_command[64];
@@ -250,7 +301,7 @@ bool getFloatAscii85Usb(bool is_tcm, float* out_value, const char* item, const c
         data_available = false;
         memset(rxBuff, 0, sizeof(rxBuff));
 
-        if (send_command(is_tcm, full_command) != ESP_OK) continue;
+        if (send_command(full_command) != ESP_OK) continue;
 
         uint32_t start = millis();
         while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
@@ -281,4 +332,68 @@ bool getFloatAscii85Usb(bool is_tcm, float* out_value, const char* item, const c
     }
 
     return false;
+}
+
+bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
+{
+    if (!out_sensors || !command) {
+        ESP_LOGE(TAG, "getSensorsRawUSB: invalid arguments");
+        return false;
+    }
+    // Send command
+    send_command(command);
+
+    // Wait for response (timeout after 3 seconds)
+    uint32_t start = millis();
+    while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    if (!data_available) {
+        ESP_LOGE(TAG, "getSensorsRawUSB: timeout waiting for data after %u ms", USB_RESPONSE_DELAY_MS);
+        return false;
+    }
+
+    // Ensure rxBuff contains something
+    if (rxBuff[0] == '\0') {
+        ESP_LOGE(TAG, "getSensorsRawUSB: empty rxBuff");
+        return false;
+    }
+    const char* str_start = strstr((const char*)rxBuff, command);
+    if (!str_start) {
+        ESP_LOGE(TAG, "getSensorsRawUSB: command '%s' not found in rxBuff", command);
+        return false;
+    }
+    str_start += 6; // Skip "GSR 28" prefix
+    const char* str_end = strchr(str_start, '\r');
+    if (!str_end) {
+        ESP_LOGE(TAG, "getSensorsRawUSB: missing CR terminator");
+        return false;
+    }
+    uint16_t temperature, battery;
+    int16_t ax, ay, az, mx, my, mz;
+    if (decode_gsr_values(str_start,
+        &temperature, &ax, &ay, &az,
+        &mx, &my, &mz,
+        &battery) == 0) {
+        out_sensors->temp = temperature;
+        out_sensors->acc.x = ax;
+        out_sensors->acc.y = ay;
+        out_sensors->acc.z = az;
+        out_sensors->mag.x = mx;
+        out_sensors->mag.y = my;
+        out_sensors->mag.z = mz;
+        out_sensors->batt = battery;
+        ESP_LOGI(TAG, "");
+        ESP_LOGI(TAG, "");
+        ESP_LOGI(TAG, "Parsed raw sensor readings:");
+        ESP_LOGI(TAG, "  Temperature: %d", temperature);
+        ESP_LOGI(TAG, "  Acceleration: X=%d Y=%d Z=%d", ax, ay, az);
+        ESP_LOGI(TAG, "  Magnetometer: X=%d Y=%d Z=%d", mx, my, mz);
+        ESP_LOGI(TAG, "  Battery: %d mV", battery);
+    }
+    else {
+        ESP_LOGE(TAG, "getSensorsRawUSB: Failed to decode sensor readings");
+        return false;
+    }
+    return true;
 }
