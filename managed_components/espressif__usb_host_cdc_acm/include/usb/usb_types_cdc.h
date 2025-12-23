@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,7 +39,8 @@ typedef enum {
     USB_CDC_DESC_SUBTYPE_COMMAND_SET_DETAIL = 0x17, // Command Set Detail Functional Descriptor
     USB_CDC_DESC_SUBTYPE_TEL_CM = 0x18,             // Telephone Control Model Functional Descriptor
     USB_CDC_DESC_SUBTYPE_OBEX_SERVICE = 0x19,       // OBEX Service Identifier Functional Descriptor
-    USB_CDC_DESC_SUBTYPE_NCM = 0x1A                 // NCM Functional Descriptor
+    USB_CDC_DESC_SUBTYPE_NCM = 0x1A,                // NCM Functional Descriptor
+    USB_CDC_DESC_SUBTYPE_MAX
 } __attribute__((packed)) cdc_desc_subtype_t;
 
 /**
@@ -204,3 +205,73 @@ typedef struct {
     const uint8_t bControlInterface; // Master/controlling interface
     uint8_t bSubordinateInterface[]; // Slave/subordinate interfaces
 } __attribute__((packed)) cdc_union_desc_t;
+
+/**
+ * @brief USB CDC PSTN Call Descriptor
+ *
+ * @see Table 3, USB CDC-PSTN specification rev. 1.2
+ */
+typedef struct {
+    uint8_t bFunctionLength;
+    const uint8_t bDescriptorType;
+    const cdc_desc_subtype_t bDescriptorSubtype;
+    union {
+        struct {
+            uint8_t call_management:   1; // Device handles call management itself
+            uint8_t call_over_data_if: 1; // Device sends/receives call management information over Data Class interface
+            uint8_t reserved: 6;
+        };
+        uint8_t val;
+    } bmCapabilities;
+    uint8_t bDataInterface; // Interface number of Data Class interface optionally used for call management
+} __attribute__((packed)) cdc_acm_call_desc_t;
+
+/**
+ * @brief USB CDC PSTN Abstract Control Model Descriptor
+ *
+ * @see Table 4, USB CDC-PSTN specification rev. 1.2
+ */
+typedef struct {
+    uint8_t bFunctionLength;
+    const uint8_t bDescriptorType;
+    const cdc_desc_subtype_t bDescriptorSubtype;
+    union {
+        struct {
+            uint8_t feature:    1; // Device supports Set/Clear/Get_Comm_Feature requests
+            uint8_t serial:     1; // Device supports Set/Get_Line_Coding, Set_Control_Line_State and Serial_State request and notifications
+            uint8_t send_break: 1; // Device supports Send_Break request
+            uint8_t network:    1; // Device supports Network_Connection notification
+            uint8_t reserved:   4;
+        };
+        uint8_t val;
+    } bmCapabilities;
+} __attribute__((packed)) cdc_acm_acm_desc_t;
+
+/**
+ * @brief Line Coding structure
+ * @see Table 17, USB CDC-PSTN specification rev. 1.2
+ */
+typedef struct {
+    uint32_t dwDTERate;  // in bits per second
+    uint8_t bCharFormat; // 0: 1 stopbit, 1: 1.5 stopbits, 2: 2 stopbits
+    uint8_t bParityType; // 0: None, 1: Odd, 2: Even, 3: Mark, 4: Space
+    uint8_t bDataBits;   // 5, 6, 7, 8 or 16
+} __attribute__((packed)) cdc_acm_line_coding_t;
+
+/**
+ * @brief UART State Bitmap
+ * @see Table 31, USB CDC-PSTN specification rev. 1.2
+ */
+typedef union {
+    struct {
+        uint16_t bRxCarrier : 1;  // State of receiver carrier detection mechanism of device. This signal corresponds to V.24 signal 109 and RS-232 signal DCD.
+        uint16_t bTxCarrier : 1;  // State of transmission carrier. This signal corresponds to V.24 signal 106 and RS-232 signal DSR.
+        uint16_t bBreak : 1;      // State of break detection mechanism of the device.
+        uint16_t bRingSignal : 1; // State of ring signal detection of the device.
+        uint16_t bFraming : 1;    // A framing error has occurred.
+        uint16_t bParity : 1;     // A parity error has occurred.
+        uint16_t bOverRun : 1;    // Received data has been discarded due to overrun in the device.
+        uint16_t reserved : 9;
+    };
+    uint16_t val;
+} cdc_acm_uart_state_t;

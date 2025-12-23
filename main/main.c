@@ -40,7 +40,6 @@ static int loopCounter = 0;
 
 // USB selection
 static bool useTCMUsb = false;
-static bool useLogUsb = false;
 
 // ----------------------------------------------------------------------
 // LED Helpers
@@ -134,8 +133,7 @@ void app_main(void) {
     initLED();
     sequenceLED();
 
-    // Initialize dual USB (TCM + Logging)
-    if (useTCMUsb || useLogUsb) {
+    if (useTCMUsb) {
         if (!initUsb()) {
             ESP_LOGE(TAG, "USB initialization failed");
             while (1) {
@@ -180,15 +178,6 @@ void app_main(void) {
                 ESP_LOGW(TAG, "TCM read failed");
             }
         }
-
-        /*
-        if (useLogUsb) {
-            char logMsg[64];
-            if (getStrUsb(false, logMsg, sizeof(logMsg))) {
-                ESP_LOGI(TAG, "LOG USB: %s", logMsg);
-            }
-        }
-        */
 
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
     }

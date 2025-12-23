@@ -1,5 +1,7 @@
 ﻿// myUsb.c
-// Dual USB support: TCM and logging
+// -----------------------------------------------------------
+// -----------------------------------------------------------
+// USB-based TCM interface
 // -----------------------------------------------------------
 
 // Standard C Library
@@ -112,10 +114,15 @@ int decode_gsr_values(const char* response,
 // ------------------------------
 // CDC-ACM callbacks
 // ------------------------------
-static void handle_rx(uint8_t* data, size_t data_len, void* user_arg) {
-    if (data_len >= 6 && memcmp(data, "ERR 00", 6) == 0) return;
-    strcpy(rxBuff, (char*)data);
+static bool handle_rx(const uint8_t* data, size_t data_len, void* user_arg) {
+    if (data_len >= 6 && memcmp(data, "ERR 00", 6) == 0) return false;
+
+    // Copy to buffer (cast away const is safe here)
+    strncpy(rxBuff, (const char*)data, sizeof(rxBuff) - 1);
+    rxBuff[sizeof(rxBuff) - 1] = '\0';
+
     data_available = true;
+    return true;  // indicate we handled data
 }
 
 // ------------------------------
