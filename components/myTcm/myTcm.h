@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-extern bool runTcm(bool plotting_all_loops);
+extern bool runTcm(int serial_plot);
 extern bool initTcm(int overall_log_level);
 
 typedef struct {

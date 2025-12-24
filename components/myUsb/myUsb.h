@@ -7,7 +7,7 @@
 #include "myTcm.h"
 
 // Initialize USB host
-extern bool initUsb(void);
+extern bool initUsb(int log_level);
 
 // Milliseconds since boot
 extern unsigned long millis(void);

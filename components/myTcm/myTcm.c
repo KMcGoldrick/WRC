@@ -348,9 +348,8 @@ void dispCalibrations(void) {
         tcmInfo.magCal.tempSlope[2]);
 }
 
-void tcmPlot(void) {
+void tcmPlot(int serial_plot) {
 	// For use with serial plotting tools like SerialPlot
-    int serial_plot = 0;
     switch (serial_plot) {
     case 0:
 		printf("Serial plotting disabled (serial_plot=0).\n");
@@ -403,7 +402,7 @@ void tcmPlot(void) {
 // ------------------------------
 // Initialization and Run
 // ------------------------------
-bool initTcm(int overall_log_level) {
+bool initTcm(int log_level) {
     /*
     * Levels available:
         •	ESP_LOG_NONE
@@ -414,7 +413,7 @@ bool initTcm(int overall_log_level) {
         •	ESP_LOG_VERBOSE
         hint: Run idf.py menuconfig, can set the default log level
     */
-    esp_log_level_set(TAG, overall_log_level);
+    esp_log_level_set(TAG, log_level);
 
     resetAverages();
 	defaultCalibrations();
@@ -591,7 +590,7 @@ bool initTcm(int overall_log_level) {
     return true;
 }
 
-bool runTcm(bool plotting_all_loops)
+bool runTcm(int serial_plot)
 {
     //Note: The only calculation that can be in error is temperature.
     //      This will be handled by using a defaulut value 
@@ -607,14 +606,12 @@ bool runTcm(bool plotting_all_loops)
         resetAverages();
         calcTcm();
         dispTcm();
-        tcmPlot();
+        tcmPlot(serial_plot);
     }
     else {
         calcTcm();
         dispTcm();
-        if (plotting_all_loops) {
-            tcmPlot();
-        }
+        tcmPlot(serial_plot);
     }
 	return true;
 }

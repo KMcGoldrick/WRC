@@ -1,12 +1,6 @@
 ﻿/*
  * main.c
  *
- * WRC system main application
- * Supports: 
- *  - Dual USB (TCM + Logging)
- *  - LED strip status
- *  - PSRAM info display
- *  - Configurable NVS log and startup behavior
  */
 
 #include "freertos/FreeRTOS.h"
@@ -39,7 +33,13 @@ static bool tcmProcessOk = true;
 static int loopCounter = 0;
 
 // USB selection
-static bool useTCMUsb = false;
+static bool useTCMUsb = true;
+
+// Log selection
+static int logLevel = ESP_LOG_INFO;
+
+// Plot selection
+static int serial_plot = 1;
 
 // ----------------------------------------------------------------------
 // LED Helpers
@@ -109,8 +109,8 @@ static void runLED(void) {
 void app_main(void) {
     esp_rom_printf(">>> APP MAIN STARTED <<<\n");
 
-    esp_log_level_set("*", ESP_LOG_INFO);
-    esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set("*", logLevel);
+    esp_log_level_set(TAG, logLevel);
 
     ESP_LOGI(TAG, "==============================================================");
     ESP_LOGI(TAG, "  WRC System Startup");
@@ -124,17 +124,19 @@ void app_main(void) {
     ESP_LOGI(TAG, "  Target: Unknown ESP32 variant");
 #endif
 
-    ESP_LOGI(TAG, "  PSRAM available: %d bytes", esp_psram_get_size());
-    ESP_LOGI(TAG, "  Free PSRAM: %d bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-
     ESP_LOGI(TAG, "==============================================================");
+    
+    // Wait to allow TCM to power up
+    ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
+    vTaskDelay(pdMS_TO_TICKS(STARTUP_DELAY_MS));
+	ESP_LOGI(TAG, "Continuing initialization...");
 
     // Initialize peripherals
     initLED();
     sequenceLED();
 
     if (useTCMUsb) {
-        if (!initUsb()) {
+        if (!initUsb(logLevel)) {
             ESP_LOGE(TAG, "USB initialization failed");
             while (1) {
                 setPixelColor(0, 255, 0, 0);
@@ -143,15 +145,20 @@ void app_main(void) {
                 vTaskDelay(pdMS_TO_TICKS(200));
             }
         }
-    }
+		ESP_LOGI(TAG, "USB initialized");
 
-    if (useTCMUsb) {
-        ESP_LOGI(TAG, "Waiting for TCM USB device...");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        if (!connectDevice(TCM_VID, TCM_PID)) {
-            ESP_LOGE(TAG, "TCM device connection failed");
-            tcmProcessOk = false;
-        }
+
+        if (!initTcm(logLevel)) {
+            ESP_LOGE(TAG, "TCM initialization failed");
+            while (1) {
+                setPixelColor(0, 255, 0, 0);
+                vTaskDelay(pdMS_TO_TICKS(200));
+                setPixelColor(0, 0, 0, 0);
+                vTaskDelay(pdMS_TO_TICKS(200));
+            }
+		}
+        ESP_LOGI(TAG, "TCM   initialized");
+
     }
 
     ESP_LOGI(TAG, "Initialization complete. Entering main loop...");
@@ -162,21 +169,10 @@ void app_main(void) {
     while (1) {
         runLED();
 
-        ESP_LOGI(TAG, "Loop %d", ++loopCounter);
+        ESP_LOGV(TAG, "Loop %d", ++loopCounter);
 
         if (useTCMUsb) {
-            // Fetch TCM sensor data
-            rawSensors sensor;
-            if (getSensorsRawUSB(&sensor, "GSR")) {
-                tcmProcessOk = true;
-                ESP_LOGI(TAG, "TCM Temp=%u Acc=(%d,%d,%d) Mag=(%d,%d,%d) Batt=%u",
-                    sensor.temp, sensor.acc.x, sensor.acc.y, sensor.acc.z,
-                    sensor.mag.x, sensor.mag.y, sensor.mag.z, sensor.batt);
-            }
-            else {
-                tcmProcessOk = false;
-                ESP_LOGW(TAG, "TCM read failed");
-            }
+            tcmProcessOk = runTcm(serial_plot);
         }
 
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
