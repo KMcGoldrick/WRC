@@ -1,5 +1,35 @@
 ﻿# WRC (Water Resource Controller) Firmware
 
+I (4458) USB: Attempting to connect device VID=0x2047 PID=0x08AE
+I (4458) USB: Found 1 USB device(s)
+I (4458) USB: VID=0x2047 PID=0x08AE device found at address 1
+V (4458) USB: bNumInterfaces = 3
+V (4458) USB: Interface 0: Class=0x08 SubClass=0x06 Protocol=0x50 NumEP=2
+V (4468) USB: Interface 1: Class=0x02 SubClass=0x02 Protocol=0x01 NumEP=1
+I (4468) USB: Attempting to open CDC interface 1
+D (4478) cdc_acm: Checking list of opened USB devices
+D (4478) cdc_acm: Checking list of connected USB devices
+D (4488) cdc_acm: Submitting poll for BULK IN transfer
+D (4488) cdc_acm: Submitting poll for INTR IN transfer
+I (4498) USB: Opened CDC interface successfully
+I (4498) USB: Device connected and switched to CDC-ACM
+V (4508) USB: Sending command: GFV
+V (4508) cdc_acm: Submitting BULK OUT transfer chunk: 4 bytes (remaining: 4)
+D (4518) cdc_acm: out/ctrl xfer cb
+D (4518) cdc_acm: in xfer cb
+V (4518) USB: Data received len = 16
+V (4528) USB: 0x3fc9c744   0a 0d 47 46 56 20 30 36  31 2e 39 2e 30 31 0d 0a  |..GFV 061.9.01..|
+D (4528) cdc_acm: Submitting poll for BULK IN transfer
+V (4538) USB: Sent command: GFV
+I (4538) USB: getStrUsb: sent command 'GFV' (try 1/3)
+I (4548) USB: getStrUsb: parsed 'GFV' = '1.9.01'
+I (4548) TCM: TCM Version: 1.9.01
+
+
+
+Purple 19
+Grey 20 
+
 Lonely Binary
 Chip is ESP32-S3 (QFN56) (revision v0.2)
 Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)

@@ -15,15 +15,12 @@
 #include "myNvs.h"
 #include "myTcm.h"
 #include "myUsb.h"
+#include "myUart.h"
 
 #include "driver/uart.h"
 #include "driver/gpio.h"
 
 #define TAG "WRC"
-
-// Pins for TCM UART
-#define PIN_UART_TX 19
-#define PIN_UART_RX 20
 
 // ----------------------------------------------------------------------
 // Globals
@@ -33,10 +30,21 @@ static bool tcmProcessOk = true;
 static int loopCounter = 0;
 
 // USB selection
-static bool useTCMUsb = true;
+static bool useTCM = true;
+static bool useUart = false;
 
 // Log selection
-static int logLevel = ESP_LOG_INFO;
+/*
+* Levels available:
+    •	ESP_LOG_NONE
+    •	ESP_LOG_ERROR
+    •	ESP_LOG_WARN
+    •	ESP_LOG_INFO
+    •	ESP_LOG_DEBUG
+    •	ESP_LOG_VERBOSE
+    hint: Run idf.py menuconfig, can set the default log level
+*/
+static int logLevel = ESP_LOG_VERBOSE;
 
 // Plot selection
 static int serial_plot = 1;
@@ -135,20 +143,34 @@ void app_main(void) {
     initLED();
     sequenceLED();
 
-    if (useTCMUsb) {
-        if (!initUsb(logLevel)) {
-            ESP_LOGE(TAG, "USB initialization failed");
-            while (1) {
-                setPixelColor(0, 255, 0, 0);
-                vTaskDelay(pdMS_TO_TICKS(200));
-                setPixelColor(0, 0, 0, 0);
-                vTaskDelay(pdMS_TO_TICKS(200));
+    if (useTCM) {
+        if (useUart) {
+            if (!initUart(logLevel)) {
+                ESP_LOGE(TAG, "UART initialization failed");
+                while (1) {
+                    setPixelColor(0, 255, 0, 0);
+                    vTaskDelay(pdMS_TO_TICKS(200));
+                    setPixelColor(0, 0, 0, 0);
+                    vTaskDelay(pdMS_TO_TICKS(200));
+                }
             }
+            ESP_LOGI(TAG, "UART initialized");
         }
-		ESP_LOGI(TAG, "USB initialized");
+        else {
+            if (!initUsb(logLevel)) {
+                ESP_LOGE(TAG, "USB initialization failed");
+                while (1) {
+                    setPixelColor(0, 255, 0, 0);
+                    vTaskDelay(pdMS_TO_TICKS(200));
+                    setPixelColor(0, 0, 0, 0);
+                    vTaskDelay(pdMS_TO_TICKS(200));
+                }
+            }
+            ESP_LOGI(TAG, "USB initialized");
+        }
 
 
-        if (!initTcm(logLevel)) {
+        if (!initTcm(logLevel,useUart)) {
             ESP_LOGE(TAG, "TCM initialization failed");
             while (1) {
                 setPixelColor(0, 255, 0, 0);
@@ -171,8 +193,8 @@ void app_main(void) {
 
         ESP_LOGV(TAG, "Loop %d", ++loopCounter);
 
-        if (useTCMUsb) {
-            tcmProcessOk = runTcm(serial_plot);
+        if (useTCM) {
+            tcmProcessOk = runTcm(serial_plot,useUart);
         }
 
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));

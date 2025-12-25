@@ -51,18 +51,18 @@ cdc_acm_dev_hdl_t cdc_hdl = NULL;
 // Connection handle to USB Host library
 usb_host_client_handle_t client_hdl = NULL;
 
-unsigned long millis() {
+unsigned long millisUsb() {
     return (unsigned long)(esp_timer_get_time() / 1000ULL);
 }
 
-static uint8_t hex_to_byte(const char* hex)
+static uint8_t hex_to_byteUsb(const char* hex)
 {
     char buf[3] = { hex[0], hex[1], 0 };
     return (uint8_t)strtol(buf, NULL, 16);
 }
 
 // Decode GSR ASCII string into individual variables
-int decode_gsr_values(const char* response,
+int decode_gsr_valuesUsb(const char* response,
     uint16_t* temperature,     // Unsigned ADC
     int16_t* ax, int16_t* ay, int16_t* az,  // Signed accel
     int16_t* mx, int16_t* my, int16_t* mz,  // Signed mag
@@ -87,8 +87,8 @@ int decode_gsr_values(const char* response,
     // Decode 10 channels (each 4 hex chars = 2 bytes)
     uint16_t raw[10];
     for (int i = 0; i < 10; i++) {
-        uint8_t lo = hex_to_byte(p + i * 4);
-        uint8_t hi = hex_to_byte(p + i * 4 + 2);
+        uint8_t lo = hex_to_byteUsb(p + i * 4);
+        uint8_t hi = hex_to_byteUsb(p + i * 4 + 2);
         raw[i] = (uint16_t)((hi << 8) | lo);
     }
 
@@ -105,7 +105,7 @@ int decode_gsr_values(const char* response,
     return 0;
 }
 
-esp_err_t send_command(const char* cmd)
+esp_err_t send_commandUsb(const char* cmd)
 {
     ESP_LOGV(TAG, "Sending command: %s", cmd);
     data_available = false;
@@ -128,7 +128,7 @@ esp_err_t send_command(const char* cmd)
 }
 
 // Decode 5 ASCII85 characters into a 4-byte float
-float ascii85_to_float(const char str[5]) {
+float ascii85_to_floatUsb(const char str[5]) {
     uint32_t value = 0;
 
     // Convert 5 ASCII85 characters to 32-bit integer
@@ -146,14 +146,14 @@ float ascii85_to_float(const char str[5]) {
     return u.f;
 }
 
-static _Bool handle_rx(const uint8_t* data, size_t data_len, void* user_arg)
+static _Bool handle_rxUsb(const uint8_t* data, size_t data_len, void* user_arg)
 {
     // Only log if the received data is not "ERR 00"
     if (data_len == 8 && memcmp(data, "ERR 00..", 6) == 0) {
         // Ignore "ERR 00.." responses
         return false;
     }
-    ESP_LOGV(TAG, "Data received");
+    ESP_LOGV(TAG, "Data received len = %d", data_len);
     ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_len, ESP_LOG_VERBOSE);
 
     // If you need to copy into a non-const buffer:
@@ -169,10 +169,10 @@ const cdc_acm_host_device_config_t dev_config = {
     .out_buffer_size = 512,
     .user_arg = NULL,
     .event_cb = NULL,
-    .data_cb = handle_rx
+    .data_cb = handle_rxUsb
 };
 
-bool enumerate_device(int vid, int pid)
+bool enumerate_deviceUsb(int vid, int pid)
 {
     uint8_t addr_list[8];
     int addr_count = 0;
@@ -281,7 +281,7 @@ bool enumerate_device(int vid, int pid)
     return (device_dev_hdl != NULL);
 }
 
-void usb_event_handler_task(void* arg)
+void event_handler_taskUsb(void* arg)
 {
     while (1) {
         uint32_t event_flags;
@@ -299,7 +299,7 @@ void usb_event_handler_task(void* arg)
     }
 }
 
-bool connect_and_switch_device(usb_host_client_handle_t client_hdl,
+bool connect_and_switch_deviceUsb(usb_host_client_handle_t client_hdl,
     const usb_device_desc_t* dev_desc,
     const usb_config_desc_t* config_desc)
 {
@@ -365,7 +365,7 @@ bool connect_and_switch_device(usb_host_client_handle_t client_hdl,
     return success;
 }
 
-void usb_client_task(void* arg)
+void client_taskUsb(void* arg)
 {
     vTaskDelay(pdMS_TO_TICKS(200)); // let the host initialize first
 
@@ -394,17 +394,8 @@ void usb_client_task(void* arg)
 
 bool initUsb(int log_level)
 {
-    /*
-    * Levels available:
-        •	ESP_LOG_NONE
-        •	ESP_LOG_ERROR
-        •	ESP_LOG_WARN
-        •	ESP_LOG_INFO
-        •	ESP_LOG_DEBUG
-        •	ESP_LOG_VERBOSE
-        hint: Run idf.py menuconfig, can set the default log level
-    */
     esp_log_level_set(TAG, log_level);
+
     usb_host_config_t host_config = {
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .skip_phy_setup = false,
@@ -416,8 +407,8 @@ bool initUsb(int log_level)
     ESP_ERROR_CHECK(usb_host_install(&host_config));
     ESP_LOGI(TAG, "USB Host installed");
 
-    xTaskCreatePinnedToCore(usb_event_handler_task, "usb_event_handler", 4096, NULL, 6, NULL, 0);
-    xTaskCreatePinnedToCore(usb_client_task, "usb_client_task", 8192, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(event_handler_taskUsb, "usb_event_handler", 4096, NULL, 6, NULL, 0);
+    xTaskCreatePinnedToCore(client_taskUsb, "usb_client_task", 8192, NULL, 5, NULL, 1);
 
     int loopCnt = 0;
     while (!usb_host_initialized) {
@@ -431,20 +422,13 @@ bool initUsb(int log_level)
     ESP_LOGI(TAG, "USB host initialized");
     return true;
 
-    /*
-    while (!tcm_connected) {
-        ESP_LOGV(TAG, "Waiting for TCM to connect...");
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    ESP_LOGI(TAG, "TCM connected");
-    */
 }
 
-bool connectDevice(int vid, int pid)
+bool connectDeviceUsb(int vid, int pid)
 {
     ESP_LOGI(TAG, "Attempting to connect device VID=0x%04X PID=0x%04X", vid, pid);
-    if (enumerate_device(vid, pid)) {
-        if (connect_and_switch_device(client_hdl, device_desc, device_config_desc)) {
+    if (enumerate_deviceUsb(vid, pid)) {
+        if (connect_and_switch_deviceUsb(client_hdl, device_desc, device_config_desc)) {
             ESP_LOGI(TAG, "Device connected and switched to CDC-ACM");
             return true;
         }
@@ -467,12 +451,12 @@ bool getStrUsb(char* save_as, size_t save_size, const char* command)
         memset(rxBuff, 0, sizeof(rxBuff));
 
         // Send command
-        send_command(command);
+        send_commandUsb(command);
         ESP_LOGI(TAG, "getStrUsb: sent command '%s' (try %d/%d)", command, attempt + 1, NUM_USB_RETRIES);
 
         // Wait for response with timeout
-        uint32_t start = millis();
-        while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+        uint32_t start = millisUsb();
+        while (!data_available && (millisUsb() - start < USB_RESPONSE_DELAY_MS)) {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
 
@@ -526,7 +510,7 @@ bool getStrUsb(char* save_as, size_t save_size, const char* command)
     return false;
 }
 
-bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
+bool getSensorsRawUsb(rawSensors* out_sensors, const char* command)
 {
     if (!out_sensors || !command) {
         ESP_LOGE(TAG, "getSensorsRawUSB: invalid arguments");
@@ -540,13 +524,13 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
         memset(rxBuff, 0, sizeof(rxBuff));
 
         // Send command
-        send_command(command);
+        send_commandUsb(command);
         ESP_LOGV(TAG, "getSensorsRawUSB: sent command '%s' (attempt %d/%d)",
             command, attempt, NUM_USB_RETRIES);
 
         // Wait for response with timeout
-        uint32_t start = millis();
-        while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+        uint32_t start = millisUsb();
+        while (!data_available && (millisUsb() - start < USB_RESPONSE_DELAY_MS)) {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
 
@@ -582,7 +566,7 @@ bool getSensorsRawUSB(rawSensors* out_sensors, const char* command)
         uint16_t temperature = 0, battery = 0;
         int16_t ax = 0, ay = 0, az = 0, mx = 0, my = 0, mz = 0;
 
-        if (decode_gsr_values(str_start,
+        if (decode_gsr_valuesUsb(str_start,
             &temperature, &ax, &ay, &az,
             &mx, &my, &mz,
             &battery) != 0)
@@ -631,13 +615,13 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
         memset(rxBuff, 0, sizeof(rxBuff));
 
         // Send the command
-        send_command(full_command);
+        send_commandUsb(full_command);
         ESP_LOGI(TAG, "getFloatAscii85Usb: sent '%s' (try %d/%d)",
             full_command, attempt, NUM_USB_RETRIES);
 
         // Wait for response
-        uint32_t start = millis();
-        while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
+        uint32_t start = millisUsb();
+        while (!data_available && (millisUsb() - start < USB_RESPONSE_DELAY_MS)) {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
 
@@ -698,7 +682,7 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
 
         // Convert ASCII85 string to float
         ESP_LOGV(TAG, "getFloatAscii85Usb: converting '%s' to float", temp);
-        *out_value = ascii85_to_float(temp);
+        *out_value = ascii85_to_floatUsb(temp);
         ESP_LOGI(TAG, "getFloatAscii85Usb: %s (%s) = %f", item, address, *out_value);
         return true;
     }
