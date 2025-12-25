@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-extern bool runTcm(int serial_plot, bool useUart);
-extern bool initTcm(int overall_log_level, bool useUart);
+extern bool runTcm(int serial_plot);
+extern bool initTcm(int overall_log_level);
 
 typedef struct {
     float x;

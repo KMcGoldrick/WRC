@@ -10,7 +10,7 @@
 extern bool initUsb(int log_level);
 
 // Milliseconds since boot
-extern unsigned long millisUsb(void);
+extern unsigned long millis(void);
 
 // Connect a USB device
 extern bool connectDeviceUsb(int vid, int pid);

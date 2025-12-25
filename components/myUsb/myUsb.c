@@ -51,7 +51,7 @@ cdc_acm_dev_hdl_t cdc_hdl = NULL;
 // Connection handle to USB Host library
 usb_host_client_handle_t client_hdl = NULL;
 
-unsigned long millisUsb() {
+unsigned long millis() {
     return (unsigned long)(esp_timer_get_time() / 1000ULL);
 }
 
@@ -455,8 +455,8 @@ bool getStrUsb(char* save_as, size_t save_size, const char* command)
         ESP_LOGI(TAG, "getStrUsb: sent command '%s' (try %d/%d)", command, attempt + 1, NUM_USB_RETRIES);
 
         // Wait for response with timeout
-        uint32_t start = millisUsb();
-        while (!data_available && (millisUsb() - start < USB_RESPONSE_DELAY_MS)) {
+        uint32_t start = millis();
+        while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
 
@@ -529,8 +529,8 @@ bool getSensorsRawUsb(rawSensors* out_sensors, const char* command)
             command, attempt, NUM_USB_RETRIES);
 
         // Wait for response with timeout
-        uint32_t start = millisUsb();
-        while (!data_available && (millisUsb() - start < USB_RESPONSE_DELAY_MS)) {
+        uint32_t start = millis();
+        while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
 
@@ -620,8 +620,8 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
             full_command, attempt, NUM_USB_RETRIES);
 
         // Wait for response
-        uint32_t start = millisUsb();
-        while (!data_available && (millisUsb() - start < USB_RESPONSE_DELAY_MS)) {
+        uint32_t start = millis();
+        while (!data_available && (millis() - start < USB_RESPONSE_DELAY_MS)) {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
 

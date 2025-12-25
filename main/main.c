@@ -15,7 +15,6 @@
 #include "myNvs.h"
 #include "myTcm.h"
 #include "myUsb.h"
-#include "myUart.h"
 
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -31,7 +30,6 @@ static int loopCounter = 0;
 
 // USB selection
 static bool useTCM = true;
-static bool useUart = false;
 
 // Log selection
 /*
@@ -144,33 +142,19 @@ void app_main(void) {
     sequenceLED();
 
     if (useTCM) {
-        if (useUart) {
-            if (!initUart(logLevel)) {
-                ESP_LOGE(TAG, "UART initialization failed");
-                while (1) {
-                    setPixelColor(0, 255, 0, 0);
-                    vTaskDelay(pdMS_TO_TICKS(200));
-                    setPixelColor(0, 0, 0, 0);
-                    vTaskDelay(pdMS_TO_TICKS(200));
-                }
+        if (!initUsb(logLevel)) {
+            ESP_LOGE(TAG, "USB initialization failed");
+            while (1) {
+                setPixelColor(0, 255, 0, 0);
+                vTaskDelay(pdMS_TO_TICKS(200));
+                setPixelColor(0, 0, 0, 0);
+                vTaskDelay(pdMS_TO_TICKS(200));
             }
-            ESP_LOGI(TAG, "UART initialized");
         }
-        else {
-            if (!initUsb(logLevel)) {
-                ESP_LOGE(TAG, "USB initialization failed");
-                while (1) {
-                    setPixelColor(0, 255, 0, 0);
-                    vTaskDelay(pdMS_TO_TICKS(200));
-                    setPixelColor(0, 0, 0, 0);
-                    vTaskDelay(pdMS_TO_TICKS(200));
-                }
-            }
-            ESP_LOGI(TAG, "USB initialized");
-        }
+        ESP_LOGI(TAG, "USB initialized");
 
 
-        if (!initTcm(logLevel,useUart)) {
+        if (!initTcm(logLevel)) {
             ESP_LOGE(TAG, "TCM initialization failed");
             while (1) {
                 setPixelColor(0, 255, 0, 0);
@@ -194,7 +178,7 @@ void app_main(void) {
         ESP_LOGV(TAG, "Loop %d", ++loopCounter);
 
         if (useTCM) {
-            tcmProcessOk = runTcm(serial_plot,useUart);
+            tcmProcessOk = runTcm(serial_plot);
         }
 
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
