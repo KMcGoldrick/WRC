@@ -424,8 +424,10 @@ bool initTcm(int log_level) {
     // Version and Serial Number do not need error checking
     getStrUsb(tcmInfo.version, sizeof(tcmInfo.version), FIRMWARE_VERSION_CMD);
     ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
-    vTaskDelay(pdMS_TO_TICKS(5000));
     getStrUsb(tcmInfo.serialNum, sizeof(tcmInfo.serialNum), SERIAL_NUMBER_CMD);
+	ESP_LOGI(TAG, "TCM Serial Number: %s", tcmInfo.serialNum);
+    ESP_LOGI(TAG, "Waiting 5 seconds before reading calibrations...");
+    vTaskDelay(pdMS_TO_TICKS(5000));
     float junk; // Placeholder for unused values
     if (!getFloatAscii85Usb(&junk, "RVN13", CALIBRATION_CMD, "06000008")) {
         ESP_LOGE(TAG, "Failed to get RVN13");
