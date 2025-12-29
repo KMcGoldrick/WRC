@@ -32,7 +32,7 @@ static bool tcmProcessOk = true;
 static int loopCounter = 0;
 
 // USB selection
-static bool useTCM = false;
+static bool useTCM = true;
 
 // Log selection
 /*
@@ -112,12 +112,55 @@ static void runLED(void) {
     }
 }
 
+#define LOG_UART_NUM      UART_NUM_1   // Use UART1
+#define LOG_TX_PIN        8
+#define LOG_RX_PIN        9
+#define LOG_UART_BAUD     115200
+#define LOG_UART_BUF_SIZE 1024
+
+static void init_log_uart(void) {
+    uart_config_t uart_config = {
+        .baud_rate = LOG_UART_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_APB
+    };
+    ESP_ERROR_CHECK(uart_driver_install(LOG_UART_NUM, LOG_UART_BUF_SIZE, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(LOG_UART_NUM, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(LOG_UART_NUM, LOG_TX_PIN, LOG_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+}
+
+static int uart_log_vprintf(const char* fmt, va_list args) {
+    char buffer[256];
+    int len = vsnprintf(buffer, sizeof(buffer), fmt, args);
+	// add CR
+	strcat(buffer, "\r");
+	len += 1;
+    if (len > 0) {
+        uart_write_bytes(LOG_UART_NUM, buffer, len);
+    }
+    return len;
+}
+
+void redirect_esp_log(void) {
+    esp_log_set_vprintf(uart_log_vprintf);
+}
+
 // ----------------------------------------------------------------------
 // Application Entry Point
 // ----------------------------------------------------------------------
 void app_main(void) {
 
-	init_rs485();
+    // --- Allow 5 seconds for flashing ---
+    ESP_LOGI(TAG, "Startup delay: 5 seconds. You can flash the device now...");
+    vTaskDelay(pdMS_TO_TICKS(5000));  // 5000 ms = 5 seconds
+
+    // --- Continue normal initialization ---	
+    //init_rs485();
+	init_log_uart();
+	redirect_esp_log();
 
     esp_log_level_set("*", logLevel);
     esp_log_level_set(TAG, logLevel);
@@ -160,7 +203,7 @@ void app_main(void) {
 
         if (!initTcm(logLevel)) {
             ESP_LOGE(TAG, "TCM initialization failed");
-            send_rs485("ERR:TCM_INIT");
+            //send_rs485("ERR:TCM_INIT");
 
             for (;;) {
                 setPixelColor(0, 255, 0, 0);
@@ -183,7 +226,7 @@ void app_main(void) {
         ESP_LOGI(TAG, "Loop %d", ++loopCounter);
         char uartMessage[50];
         sprintf(uartMessage, "Uart Loop %d", loopCounter);
-        send_rs485(uartMessage);
+        //send_rs485(uartMessage);
 
         if (useTCM) {
             tcmProcessOk = runTcm(serial_plot);

@@ -350,26 +350,30 @@ void dispCalibrations(void) {
 
 void tcmPlot(int serial_plot) {
 	// For use with serial plotting tools like SerialPlot
+    char uartMessage[50];
     switch (serial_plot) {
     case 0:
-		printf("Serial plotting disabled (serial_plot=0).\n");
+        sprintf(uartMessage, "Serial plotting disabled (serial_plot=0).\n");
+        send_rs485(uartMessage);
         break;
     case 1:
-        printf("%d %0.2f %0.2f %0.2f\n",
+        sprintf(uartMessage, "%d %0.2f %0.2f %0.2f\n",
             serial_plot,
             tcmInfo.headingDeg,
             tcmInfo.current.north,
             tcmInfo.current.east);
+		send_rs485(uartMessage);
         break;
     case 2:
-        printf("%d %0.2f %0.2f %0.2f\n",
+        sprintf(uartMessage, "%d %0.2f %0.2f %0.2f\n",
             serial_plot,
             tcmInfo.orientation.rollRad,
             tcmInfo.orientation.pitchRad,
             tcmInfo.orientation.yawRad);
+        send_rs485(uartMessage);
         break;
     case 3:
-        printf("%d %d %d %d %0.2f %0.2f %0.2f\n",
+        sprintf(uartMessage, "%d %d %d %d %0.2f %0.2f %0.2f\n",
             serial_plot,
             tcmInfo.raw.acc.x,
             tcmInfo.raw.acc.y,
@@ -377,9 +381,10 @@ void tcmPlot(int serial_plot) {
             tcmInfo.scaled.acc.x,
             tcmInfo.scaled.acc.y,
             tcmInfo.scaled.acc.z);
+        send_rs485(uartMessage);
         break;
     case 4:
-        printf("%d %d %d %d %0.2f %0.2f %0.2f\n",
+        sprintf(uartMessage, "%d %d %d %d %0.2f %0.2f %0.2f\n",
             serial_plot,
             tcmInfo.raw.mag.x,
             tcmInfo.raw.mag.y,
@@ -387,14 +392,17 @@ void tcmPlot(int serial_plot) {
             tcmInfo.scaled.mag.x,
             tcmInfo.scaled.mag.y,
             tcmInfo.scaled.mag.z);
+        send_rs485(uartMessage);
         break;
     case 5:
-        printf("%d %d %0.2f %d %0.2f\n",
+        sprintf(uartMessage, "%d %d %0.2f %d %0.2f\n",
             serial_plot,
             tcmInfo.raw.temp, tcmInfo.scaled.temp, tcmInfo.raw.batt, tcmInfo.scaled.batt);
+		send_rs485(uartMessage);
         break;
     default:
-        printf("Need to set 'serial_plot' to enable plotting.\n");
+        sprintf(uartMessage, "Need to set 'serial_plot' to enable plotting.\n");
+        send_rs485(uartMessage);
         break;
     }
 }
