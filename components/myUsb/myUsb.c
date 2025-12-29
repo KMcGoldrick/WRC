@@ -22,6 +22,10 @@
 #include "usb/usb_host.h"
 #include "usb/cdc_acm_host.h"
 #include "usb/usb_types_ch9.h"
+#include "driver/uart.h"
+#include "esp_vfs_dev.h"
+#include <stdio.h>
+#include "driver/gpio.h"
 
 // ------------------------------
 // Project Headers
@@ -60,6 +64,57 @@ static uint8_t hex_to_byteUsb(const char* hex)
     char buf[3] = { hex[0], hex[1], 0 };
     return (uint8_t)strtol(buf, NULL, 16);
 }
+
+void init_rs485(void)
+{
+    uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+    };
+
+    // 1. Install driver FIRST
+    uart_driver_install(UART_NUM_RS485, 1024, 0, 0, NULL, 0);
+
+    // 2. Configure UART
+    uart_param_config(UART_NUM_RS485, &uart_config);
+
+    // 3. Set pins
+    uart_set_pin(
+        UART_NUM_RS485,
+        TX_PIN_RS485,
+        RX_PIN_RS485,
+        UART_PIN_NO_CHANGE,
+        UART_PIN_NO_CHANGE
+    );
+
+    // 4. Clear buffers
+    uart_flush(UART_NUM_RS485);
+
+    // 5. RS-485 DE pin
+    gpio_set_direction(RS485_DE_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(RS485_DE_GPIO, 0); // receive mode
+}
+
+void send_rs485(const char* text)
+{
+    // Enable transmit
+    gpio_set_level(RS485_DE_GPIO, 1);
+    esp_rom_delay_us(5);   // allow driver to switch
+
+    uart_write_bytes(UART_NUM_RS485, text, strlen(text));
+    uart_write_bytes(UART_NUM_RS485, "\r\n", 2);
+
+    uart_wait_tx_done(UART_NUM_RS485, pdMS_TO_TICKS(100));
+
+    // Back to receive
+    esp_rom_delay_us(5);
+    gpio_set_level(RS485_DE_GPIO, 0);
+}
+
+
 
 // Decode GSR ASCII string into individual variables
 int decode_gsr_valuesUsb(const char* response,

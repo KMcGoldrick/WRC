@@ -405,6 +405,11 @@ void tcmPlot(int serial_plot) {
 bool initTcm(int log_level) {
     esp_log_level_set(TAG, log_level);
 
+    // Wait to allow TCM to power up
+    ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
+    vTaskDelay(pdMS_TO_TICKS(STARTUP_DELAY_MS));
+    ESP_LOGI(TAG, "Continuing initialization...");
+
     resetAverages();
 	defaultCalibrations();
 	defaultRaws();

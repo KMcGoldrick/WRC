@@ -23,6 +23,14 @@
 #define UART_RESPONSE_DELAY_MS 5000
 #define TCM_CONNECT_TIMEOUT_MS 10000
 
+// RS485 UART
+#define RS485_DE_GPIO 5
+#define UART_NUM_RS485 2
+#define TX_PIN_RS485 8
+#define RX_PIN_RS485 9
+#define UART_USB_INIT_ERROR "USB initialization failed"
+#define UART_TCM_INIT_ERROR "TCM initialization failed"
+
 // Other
 #define MAGIC 247
 #define MAX_INT16 32767

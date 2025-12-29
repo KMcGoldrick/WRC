@@ -6,6 +6,12 @@
 #include <stddef.h>
 #include "myTcm.h"
 
+// Initialize UART for RS485
+void init_rs485(void);
+
+// Send text over UART RS485
+void send_rs485(const char* text);
+
 // Initialize USB host
 extern bool initUsb(int log_level);
 
