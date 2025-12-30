@@ -153,14 +153,13 @@ void redirect_esp_log(void) {
 // ----------------------------------------------------------------------
 void app_main(void) {
 
-    // --- Allow 5 seconds for flashing ---
-    ESP_LOGI(TAG, "Startup delay: 5 seconds. You can flash the device now...");
-    vTaskDelay(pdMS_TO_TICKS(5000));  // 5000 ms = 5 seconds
-
-    // --- Continue normal initialization ---	
     //init_rs485();
 	init_log_uart();
 	redirect_esp_log();
+
+    // --- Allow 5 seconds for flashing ---
+    ESP_LOGI(TAG, "Startup delay: 5 seconds. You can flash the device now...");
+    vTaskDelay(pdMS_TO_TICKS(5000));  // 5000 ms = 5 seconds
 
     esp_log_level_set("*", logLevel);
     esp_log_level_set(TAG, logLevel);
@@ -189,27 +188,27 @@ void app_main(void) {
     if (useTCM) {
 
         if (!initUsb(logLevel)) {
-            ESP_LOGE(TAG, "USB initialization failed");
-            send_rs485("ERR:USB_INIT");
+            //send_rs485("ERR:USB_INIT");
 
             for (;;) {
+                ESP_LOGE(TAG, "USB initialization failed");
                 setPixelColor(0, 0, 0, 255);
-                vTaskDelay(pdMS_TO_TICKS(200));
+                vTaskDelay(pdMS_TO_TICKS(500));
                 setPixelColor(0, 0, 0, 0);
-                vTaskDelay(pdMS_TO_TICKS(200));
+                vTaskDelay(pdMS_TO_TICKS(500));
             }
         }
         ESP_LOGI(TAG, "USB initialized");
 
         if (!initTcm(logLevel)) {
-            ESP_LOGE(TAG, "TCM initialization failed");
             //send_rs485("ERR:TCM_INIT");
 
             for (;;) {
+                ESP_LOGE(TAG, "TCM initialization failed");
                 setPixelColor(0, 255, 0, 0);
-                vTaskDelay(pdMS_TO_TICKS(200));
+                vTaskDelay(pdMS_TO_TICKS(500));
                 setPixelColor(0, 0, 0, 0);
-                vTaskDelay(pdMS_TO_TICKS(200));
+                vTaskDelay(pdMS_TO_TICKS(500));
             }
         }
         ESP_LOGI(TAG, "TCM initialized");
