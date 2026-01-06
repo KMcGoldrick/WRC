@@ -26,6 +26,8 @@
 TcmInfo tcmInfo;
 TcmAverage tcmAvg;
 
+int log_level = ESP_LOG_NONE;
+
 // ------------------------------
 // Placeholder: Calibration values
 // ------------------------------
@@ -227,7 +229,9 @@ float speedFromTilt(void) {
         (in degrees) from vertical.
     */
 
-    ESP_LOGE(TAG, "Speed from tilt not implemented");
+	ESP_LOGE(TAG, " ");
+    ESP_LOGE(TAG, "SPEED FROM TILT NOT IMPLEMENTED");
+	ESP_LOGE(TAG, " ");
     return (float)(MAGIC/10.0);
 }
 
@@ -410,8 +414,9 @@ void tcmPlot(int serial_plot) {
 // ------------------------------
 // Initialization and Run
 // ------------------------------
-bool initTcm(int log_level) {
-    esp_log_level_set(TAG, log_level);
+bool initTcm(int main_log_level) {
+    esp_log_level_set(TAG, main_log_level);
+	log_level = main_log_level;
 
     // Wait to allow TCM to power up
     ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
@@ -606,18 +611,15 @@ bool runTcm(int serial_plot)
         ESP_LOGE(TAG, "Failed to get raw sensor data");
         return false;
     }
-    addRawsToRawSum();
+	addRawsToRawSum(); // Increments sampleCount
     if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
         ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
         calcAveragesAndCopyToRaw();
-        resetAverages();
-        calcTcm();
-        dispTcm();
-        tcmPlot(serial_plot);
+		resetAverages(); // Sets sampleCount to 0
     }
-    else {
-        calcTcm();
-        dispTcm();
+    calcTcm();
+    dispTcm();
+    if (log_level == ESP_LOG_NONE && tcmAvg.sampleCount == 0) {
         tcmPlot(serial_plot);
     }
 	return true;

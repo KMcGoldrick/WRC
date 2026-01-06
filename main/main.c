@@ -21,20 +21,12 @@
 #include "driver/gpio.h"
 #include <stdio.h>
 
-
 #define TAG "WRC"
-
-// ----------------------------------------------------------------------
-// Globals
-// ----------------------------------------------------------------------
-static led_strip_handle_t led_strip;
-static bool tcmProcessOk = true;
-static int loopCounter = 0;
 
 // USB selection
 static bool useTCM = true;
 
-// Log selection
+// Log/Plot selection
 /*
 * Levels available:
     •	ESP_LOG_NONE
@@ -45,10 +37,17 @@ static bool useTCM = true;
     •	ESP_LOG_VERBOSE
     hint: Run idf.py menuconfig, can set the default log level
 */
-static int logLevel = ESP_LOG_INFO;
+static int logLevel = ESP_LOG_NONE; // Set to NONE to plot over RS485
+// Plot selection see myTcm.c tcmPlot()
+static int serial_plot = 1; // 0=none, 1=heading/north/east, 2=roll/pitch/yaw, 3=accel, 4=mag, 5=temp/batt
 
-// Plot selection
-static int serial_plot = 1;
+// ----------------------------------------------------------------------
+// Globals
+// ----------------------------------------------------------------------
+static led_strip_handle_t led_strip;
+static bool tcmProcessOk = true;
+static int loopCounter = 0;
+
 
 // ----------------------------------------------------------------------
 // LED Helpers
@@ -112,12 +111,6 @@ static void runLED(void) {
     }
 }
 
-#define LOG_UART_NUM      UART_NUM_1   // Use UART1
-#define LOG_TX_PIN        8
-#define LOG_RX_PIN        9
-#define LOG_UART_BAUD     115200
-#define LOG_UART_BUF_SIZE 1024
-
 static void init_log_uart(void) {
     uart_config_t uart_config = {
         .baud_rate = LOG_UART_BAUD,
@@ -153,9 +146,14 @@ void redirect_esp_log(void) {
 // ----------------------------------------------------------------------
 void app_main(void) {
 
-    //init_rs485();
-	init_log_uart();
-	redirect_esp_log();
+    if (logLevel == ESP_LOG_NONE) {
+        init_rs485();
+    }
+    else {
+
+        init_log_uart();
+        redirect_esp_log();
+    }
 
     // --- Allow 5 seconds for flashing ---
     ESP_LOGI(TAG, "Startup delay: 5 seconds. You can flash the device now...");
@@ -222,11 +220,9 @@ void app_main(void) {
     while (1) {
         runLED();
 
+		ESP_LOGI(TAG, "-----------------------------------");
         ESP_LOGI(TAG, "Loop %d", ++loopCounter);
-        char uartMessage[50];
-        sprintf(uartMessage, "Uart Loop %d", loopCounter);
-        //send_rs485(uartMessage);
-
+        
         if (useTCM) {
             tcmProcessOk = runTcm(serial_plot);
         }

@@ -30,6 +30,11 @@
 #define RX_PIN_RS485 9
 #define UART_USB_INIT_ERROR "USB initialization failed"
 #define UART_TCM_INIT_ERROR "TCM initialization failed"
+#define LOG_UART_NUM      UART_NUM_1
+#define LOG_TX_PIN        8
+#define LOG_RX_PIN        9
+#define LOG_UART_BAUD     115200
+#define LOG_UART_BUF_SIZE 1024
 
 // Other
 #define MAGIC 247
@@ -41,7 +46,7 @@
 #define NUM_ITERATIONS_TO_AVERAGE 20
 #define DECLINATION_DEG  -7.66f  // Magnetic declination for Grenville NC
 
-// Lowell Instruments TCM
+// Lowell Instruments TCM Commands
 #define TCM_VID 0x08AE
 #define TCM_PID 0x2047
 #define FIRMWARE_VERSION_CMD   "GFV"
