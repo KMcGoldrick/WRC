@@ -24,7 +24,8 @@
 #define TAG "WRC"
 
 // USB selection
-static bool useTCM = true;
+static bool useTCM = false;
+char uartMessage[192];
 
 // Log/Plot selection
 /*
@@ -39,7 +40,7 @@ static bool useTCM = true;
 */
 static int logLevel = ESP_LOG_NONE; // Set to NONE to plot over RS485
 // Plot selection see myTcm.c tcmPlot()
-static int serial_plot = 1; // 0=none, 1=heading/north/east, 2=roll/pitch/yaw, 3=accel, 4=mag, 5=temp/batt
+static int serial_plot = 11;
 
 // ----------------------------------------------------------------------
 // Globals
@@ -159,8 +160,8 @@ void app_main(void) {
     ESP_LOGI(TAG, "Startup delay: 5 seconds. You can flash the device now...");
     vTaskDelay(pdMS_TO_TICKS(5000));  // 5000 ms = 5 seconds
 
-    esp_log_level_set("*", logLevel);
-    esp_log_level_set(TAG, logLevel);
+    //esp_log_level_set("*", logLevel);
+    //esp_log_level_set(TAG, logLevel);
 
     ESP_LOGI(TAG, "==============================================================");
     ESP_LOGI(TAG, "  WRC System Startup");
@@ -222,9 +223,33 @@ void app_main(void) {
 
 		ESP_LOGI(TAG, "-----------------------------------");
         ESP_LOGI(TAG, "Loop %d", ++loopCounter);
-        
+        uint8_t response[128];
+
+        int len = read_rs485_bytes(response, sizeof(response), 1000);
+
+        if (len > 0)
+        {
+            ESP_LOG_BUFFER_HEXDUMP("Hexdump:", response, len, ESP_LOG_INFO);
+        }
+
+        if (len > 0)
+        {
+            ESP_LOGI(TAG, "RX: %d bytes", len);
+
+            for (int i = 0; i < len; i++)
+                printf("%02X ", response[i]);
+
+            printf("\n");
+        }
+
         if (useTCM) {
             tcmProcessOk = runTcm(serial_plot);
+        }
+        else 
+        {
+            snprintf(uartMessage, sizeof(uartMessage),
+                "main loop: %d\n", loopCounter);
+            send_rs485_text(uartMessage);
         }
 
         vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));

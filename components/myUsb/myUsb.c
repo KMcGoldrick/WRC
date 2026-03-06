@@ -96,24 +96,46 @@ void init_rs485(void)
     // 5. RS-485 DE pin
     gpio_set_direction(RS485_DE_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(RS485_DE_GPIO, 0); // receive mode
+
+    //6. Initialize Reader
+    /*
+    xTaskCreatePinnedToCore(
+        rs485_receive_task,
+        "rs485_rx",
+        4096,
+        NULL,
+        5,
+        NULL,
+        1);
+    */
 }
 
-void send_rs485(const char* text)
+void send_rs485_text(const char* text)
 {
-    // Enable transmit
     gpio_set_level(RS485_DE_GPIO, 1);
-    esp_rom_delay_us(5);   // allow driver to switch
+    esp_rom_delay_us(5);
 
     uart_write_bytes(UART_NUM_RS485, text, strlen(text));
     uart_write_bytes(UART_NUM_RS485, "\r\n", 2);
 
     uart_wait_tx_done(UART_NUM_RS485, pdMS_TO_TICKS(100));
 
-    // Back to receive
     esp_rom_delay_us(5);
     gpio_set_level(RS485_DE_GPIO, 0);
 }
 
+void send_rs485_bytes(const uint8_t* data, size_t len)
+{
+    gpio_set_level(RS485_DE_GPIO, 1);
+    esp_rom_delay_us(5);
+
+    uart_write_bytes(UART_NUM_RS485, data, len);
+
+    uart_wait_tx_done(UART_NUM_RS485, pdMS_TO_TICKS(100));
+
+    esp_rom_delay_us(5);
+    gpio_set_level(RS485_DE_GPIO, 0);
+}
 
 
 // Decode GSR ASCII string into individual variables
@@ -743,4 +765,73 @@ bool getFloatAscii85Usb(float* out_value, const char* item, const char* command,
 
     ESP_LOGE(TAG, "getFloatAscii85Usb: failed after %d retries", NUM_USB_RETRIES);
     return false;
+}
+
+int read_rs485_line(char* buffer, int max_len, int timeout_ms)
+{
+    if (!buffer || max_len == 0)
+        return -1;
+
+    int total = 0;
+    uint8_t ch;
+
+    while (total < max_len - 1)
+    {
+        int len = uart_read_bytes(
+            UART_NUM_RS485,
+            &ch,
+            1,
+            pdMS_TO_TICKS(timeout_ms)
+        );
+
+        if (len <= 0)
+            break;
+
+        buffer[total++] = ch;
+
+        if (ch == '\n')
+            break;
+    }
+
+    buffer[total] = 0;
+    return total;
+}
+
+int read_rs485_bytes(uint8_t* buffer, int max_len, int timeout_ms)
+{
+    if (!buffer)
+        return -1;
+
+    int len = uart_read_bytes(
+        UART_NUM_RS485,
+        buffer,
+        max_len,
+        pdMS_TO_TICKS(timeout_ms)
+    );
+
+    return len;
+}
+
+int rs485_available()
+{
+    size_t bytes_available = 0;
+    uart_get_buffered_data_len(UART_NUM_RS485, &bytes_available);
+    return bytes_available;
+}
+
+void rs485_receive_task(void* arg)
+{
+    char line[128];
+
+    while (1)
+    {
+        int len = read_rs485_line(line, sizeof(line), 100);
+
+        if (len > 0)
+        {
+            //ESP_LOGI("RS485", "Received: %s", line);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }

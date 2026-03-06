@@ -65,17 +65,17 @@ typedef struct {
 } TempCalCoef;
 
 typedef struct {
-    char version[12];
-    char serialNum[12];
-    rawSensors raw;
-    Sensors scaled;
-    TempCalCoef tempCal;
-    CubicAccelerometer accCal;
-    CubicMagnetometer magCal;
-    RPY orientation;
-	float speed;
-    float headingDeg;
-    Velocity current;
+    char version[12];          //6
+    char serialNum[12];        //6
+    rawSensors raw;            //3 acc 4 mag 5 temp/batt
+    Sensors scaled;            //3 acc 4 mag 5 temp/batt
+    TempCalCoef tempCal;       //7
+    CubicAccelerometer accCal; //8 9
+    CubicMagnetometer magCal;  //10 11
+    RPY orientation;           //2
+	float speed;               //Not Implemented
+    float headingDeg;          //1
+    Velocity current;          //1
 } TcmInfo;
 
 typedef struct {

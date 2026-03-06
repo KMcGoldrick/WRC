@@ -9,8 +9,11 @@
 // Initialize UART for RS485
 void init_rs485(void);
 
+// Send bytes over UART RS485
+void send_rs485_bytes(const uint8_t* data, size_t len);
+
 // Send text over UART RS485
-void send_rs485(const char* text);
+void send_rs485_text(const char* text);
 
 // Initialize USB host
 extern bool initUsb(int log_level);
@@ -31,3 +34,8 @@ extern bool getStrUsb(char* save_as, size_t save_size, const char* command);
 extern bool getFloatAscii85Usb(float* out_value, const char* item, const char* command, const char* address);
 
 bool getSensorsRawUsb(rawSensors* out_sensors, const char* command);
+
+int rs485_available();
+int read_rs485_bytes(uint8_t* buffer, int max_len, int timeout_ms);
+int read_rs485_line(char* buffer, int max_len, int timeout_ms);
+void rs485_receive_task(void* arg);

@@ -352,65 +352,229 @@ void dispCalibrations(void) {
         tcmInfo.magCal.tempSlope[2]);
 }
 
-void tcmPlot(int serial_plot) {
-	// For use with serial plotting tools like SerialPlot
-    char uartMessage[50];
-    switch (serial_plot) {
+void tcmPlotBinary(int serial_plot)
+{
+    #define TCM_BIN_SOF             0xAA
+    uint8_t frame[51];              // enough for largest payload
+    uint8_t idx = 0;
+
+    frame[idx++] = TCM_BIN_SOF;
+    frame[idx++] = serial_plot;
+
+    uint8_t* lenPtr = &frame[idx++];
+    uint8_t payloadStart = idx;
+
+    switch (serial_plot)
+    {
     case 0:
-        sprintf(uartMessage, "Serial plotting disabled (serial_plot=0).\n");
-        send_rs485(uartMessage);
+        // Disabled – no payload
         break;
-    case 1:
-        sprintf(uartMessage, "%d %0.2f %0.2f %0.2f\n",
-            serial_plot,
+
+    case 1: // heading + velocity (3 floats)
+        memcpy(&frame[idx], &tcmInfo.headingDeg, sizeof(float)); idx += 4;
+        memcpy(&frame[idx], &tcmInfo.current.north, sizeof(float)); idx += 4;
+        memcpy(&frame[idx], &tcmInfo.current.east, sizeof(float)); idx += 4;
+        break;
+
+    case 2: // roll / pitch / yaw (3 floats)
+        memcpy(&frame[idx], &tcmInfo.orientation.rollRad, sizeof(float)); idx += 4;
+        memcpy(&frame[idx], &tcmInfo.orientation.pitchRad, sizeof(float)); idx += 4;
+        memcpy(&frame[idx], &tcmInfo.orientation.yawRad, sizeof(float)); idx += 4;
+        break;
+
+    case 3: // acc raw (3 int16) + acc scaled (3 float)
+        memcpy(&frame[idx], &tcmInfo.raw.acc, sizeof(rawXYZ)); idx += sizeof(rawXYZ);
+        memcpy(&frame[idx], &tcmInfo.scaled.acc, sizeof(XYZ)); idx += sizeof(XYZ);
+        break;
+
+    case 4: // mag raw (3 int16) + mag scaled (3 float)
+        memcpy(&frame[idx], &tcmInfo.raw.mag, sizeof(rawXYZ)); idx += sizeof(rawXYZ);
+        memcpy(&frame[idx], &tcmInfo.scaled.mag, sizeof(XYZ)); idx += sizeof(XYZ);
+        break;
+
+    case 5: // temp + batt (raw uint16 + scaled float)
+        memcpy(&frame[idx], &tcmInfo.raw.temp, sizeof(uint16_t)); idx += 2;
+        memcpy(&frame[idx], &tcmInfo.scaled.temp, sizeof(float)); idx += 4;
+        memcpy(&frame[idx], &tcmInfo.raw.batt, sizeof(uint16_t)); idx += 2;
+        memcpy(&frame[idx], &tcmInfo.scaled.batt, sizeof(float)); idx += 4;
+        break;
+
+    case 6: // version + serial (binary strings, fixed size)
+        memcpy(&frame[idx], tcmInfo.version, sizeof(tcmInfo.version)); idx += sizeof(tcmInfo.version);
+        memcpy(&frame[idx], tcmInfo.serialNum, sizeof(tcmInfo.serialNum)); idx += sizeof(tcmInfo.serialNum);
+        break;
+
+    case 7: // temp calibration (5 floats)
+        memcpy(&frame[idx], &tcmInfo.tempCal, sizeof(TempCalCoef));
+        idx += sizeof(TempCalCoef);
+        break;
+
+    case 8: // acc offset + cubic (6 floats)
+        memcpy(&frame[idx], tcmInfo.accCal.offset, 3 * sizeof(float)); idx += 12;
+        memcpy(&frame[idx], tcmInfo.accCal.cubic, 3 * sizeof(float)); idx += 12;
+        break;
+
+    case 9: // acc gain matrix (9 floats)
+        memcpy(&frame[idx], tcmInfo.accCal.gain, 9 * sizeof(float));
+        idx += 36;
+        break;
+
+    case 10: // mag soft + hard iron (12 floats)
+        memcpy(&frame[idx], tcmInfo.magCal.softIron, 9 * sizeof(float)); idx += 36;
+        memcpy(&frame[idx], tcmInfo.magCal.hardIron, 3 * sizeof(float)); idx += 12;
+        break;
+
+    case 11: // mag temp compensation (4 floats)
+        memcpy(&frame[idx], &tcmInfo.magCal.tempRef, sizeof(float)); idx += 4;
+        memcpy(&frame[idx], tcmInfo.magCal.tempSlope, 3 * sizeof(float)); idx += 12;
+        break;
+
+    default:
+        // Unknown mode → empty payload
+        break;
+    }
+
+    *lenPtr = idx - payloadStart;
+
+    send_rs485_bytes((const uint8_t*)frame, idx);
+}
+void tcmPlotText(int serial_plot)
+{
+    // CSV output for plotting/logging
+    char uartMessage[192];
+
+    switch (serial_plot)
+    {
+    case 0:
+        // Plot-safe "disabled" frame
+        snprintf(uartMessage, sizeof(uartMessage),
+            "0,0,0,0\n");
+        break;
+
+    case 1: // Heading + velocity
+        snprintf(uartMessage, sizeof(uartMessage),
+            "1,%.3f,%.3f,%.3f\n",
             tcmInfo.headingDeg,
             tcmInfo.current.north,
             tcmInfo.current.east);
-		send_rs485(uartMessage);
         break;
-    case 2:
-        sprintf(uartMessage, "%d %0.2f %0.2f %0.2f\n",
-            serial_plot,
+
+    case 2: // Roll / Pitch / Yaw
+        snprintf(uartMessage, sizeof(uartMessage),
+            "2,%.3f,%.3f,%.3f\n",
             tcmInfo.orientation.rollRad,
             tcmInfo.orientation.pitchRad,
             tcmInfo.orientation.yawRad);
-        send_rs485(uartMessage);
         break;
-    case 3:
-        sprintf(uartMessage, "%d %d %d %d %0.2f %0.2f %0.2f\n",
-            serial_plot,
+
+    case 3: // Accelerometer raw + scaled
+        snprintf(uartMessage, sizeof(uartMessage),
+            "3,%d,%d,%d,%.3f,%.3f,%.3f\n",
             tcmInfo.raw.acc.x,
             tcmInfo.raw.acc.y,
             tcmInfo.raw.acc.z,
             tcmInfo.scaled.acc.x,
             tcmInfo.scaled.acc.y,
             tcmInfo.scaled.acc.z);
-        send_rs485(uartMessage);
         break;
-    case 4:
-        sprintf(uartMessage, "%d %d %d %d %0.2f %0.2f %0.2f\n",
-            serial_plot,
+
+    case 4: // Magnetometer raw + scaled
+        snprintf(uartMessage, sizeof(uartMessage),
+            "4,%d,%d,%d,%.3f,%.3f,%.3f\n",
             tcmInfo.raw.mag.x,
             tcmInfo.raw.mag.y,
             tcmInfo.raw.mag.z,
             tcmInfo.scaled.mag.x,
             tcmInfo.scaled.mag.y,
             tcmInfo.scaled.mag.z);
-        send_rs485(uartMessage);
         break;
-    case 5:
-        sprintf(uartMessage, "%d %d %0.2f %d %0.2f\n",
-            serial_plot,
-            tcmInfo.raw.temp, tcmInfo.scaled.temp, tcmInfo.raw.batt, tcmInfo.scaled.batt);
-		send_rs485(uartMessage);
+
+    case 5: // Temperature + battery
+        snprintf(uartMessage, sizeof(uartMessage),
+            "5,%u,%.3f,%u,%.3f\n",
+            (unsigned)tcmInfo.raw.temp,
+            tcmInfo.scaled.temp,
+            (unsigned)tcmInfo.raw.batt,
+            tcmInfo.scaled.batt);
         break;
+
+    case 6: // Version / serial (LOG ONLY, not plot)
+        snprintf(uartMessage, sizeof(uartMessage),
+            "6,%s,%s\n",
+            tcmInfo.version,
+            tcmInfo.serialNum);
+        break;
+
+    case 7: // Temperature calibration
+        snprintf(uartMessage, sizeof(uartMessage),
+            "7,%.5f,%.5f,%.5f,%.5f,%.5f\n",
+            tcmInfo.tempCal.TMO,
+            tcmInfo.tempCal.TMR,
+            tcmInfo.tempCal.TMA,
+            tcmInfo.tempCal.TMB,
+            tcmInfo.tempCal.TMC);
+        break;
+
+    case 8: // Accelerometer offsets + cubic
+        snprintf(uartMessage, sizeof(uartMessage),
+            "8,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n",
+            tcmInfo.accCal.offset[0],
+            tcmInfo.accCal.offset[1],
+            tcmInfo.accCal.offset[2],
+            tcmInfo.accCal.cubic[0],
+            tcmInfo.accCal.cubic[1],
+            tcmInfo.accCal.cubic[2]);
+        break;
+
+    case 9: // Accelerometer gain matrix
+        snprintf(uartMessage, sizeof(uartMessage),
+            "9,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n",
+            tcmInfo.accCal.gain[0][0],
+            tcmInfo.accCal.gain[0][1],
+            tcmInfo.accCal.gain[0][2],
+            tcmInfo.accCal.gain[1][0],
+            tcmInfo.accCal.gain[1][1],
+            tcmInfo.accCal.gain[1][2],
+            tcmInfo.accCal.gain[2][0],
+            tcmInfo.accCal.gain[2][1],
+            tcmInfo.accCal.gain[2][2]);
+        break;
+
+    case 10:
+        snprintf(uartMessage, sizeof(uartMessage),
+            "10,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n",
+            tcmInfo.magCal.softIron[0][0],
+            tcmInfo.magCal.softIron[0][1],
+            tcmInfo.magCal.softIron[0][2],
+            tcmInfo.magCal.softIron[1][0],
+            tcmInfo.magCal.softIron[1][1],
+            tcmInfo.magCal.softIron[1][2],
+            tcmInfo.magCal.softIron[2][0],
+            tcmInfo.magCal.softIron[2][1],
+            tcmInfo.magCal.softIron[2][2],
+            tcmInfo.magCal.hardIron[0],
+            tcmInfo.magCal.hardIron[1],
+            tcmInfo.magCal.hardIron[2]);
+        break;
+    
+    case 11:
+        snprintf(uartMessage, sizeof(uartMessage),
+            "11,%.5f,%.5f,%.5f,%.5f\n",
+            tcmInfo.magCal.tempRef,
+            tcmInfo.magCal.tempSlope[0],
+            tcmInfo.magCal.tempSlope[1],
+            tcmInfo.magCal.tempSlope[2]);
+        break;
+    
     default:
-        sprintf(uartMessage, "Need to set 'serial_plot' to enable plotting.\n");
-        send_rs485(uartMessage);
+        // Safe fallback
+        snprintf(uartMessage, sizeof(uartMessage),
+            "-1,0,0,0\n");
         break;
     }
-}
 
+    send_rs485_text(uartMessage);
+}
 // ------------------------------
 // Initialization and Run
 // ------------------------------
@@ -619,8 +783,9 @@ bool runTcm(int serial_plot)
     }
     calcTcm();
     dispTcm();
-    if (log_level == ESP_LOG_NONE && tcmAvg.sampleCount == 0) {
-        tcmPlot(serial_plot);
+    if (log_level == ESP_LOG_NONE) {
+        tcmPlotText(serial_plot);
+        tcmPlotBinary(serial_plot);
     }
 	return true;
 }
