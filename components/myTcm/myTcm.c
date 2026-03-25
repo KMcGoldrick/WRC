@@ -26,7 +26,10 @@
 TcmInfo tcmInfo;
 TcmAverage tcmAvg;
 
-int log_level = ESP_LOG_NONE;
+// Mode items
+bool TcmDebug = false;
+int dataSelect = 0;
+bool tcmDataAsText = false;
 
 // ------------------------------
 // Placeholder: Calibration values
@@ -42,7 +45,7 @@ bool defaultCalibrations(void) {
         .softIron = { {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} },
         .hardIron = { 0.0f, 0.0f, 0.0f }
     };
-    ESP_LOGI(TAG, "Set Default Calibrations");
+    if (TcmDebug) ESP_LOGI(TAG, "Set Default Calibrations");
     return true;
 }
 
@@ -261,7 +264,7 @@ void calcTcm(void) {
 // ------------------------------
 void addRawsToRawSum(void) {
 	tcmAvg.sampleCount++;
-    ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
+    if (TcmDebug) ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
 
     tcmAvg.rawSum.acc.x += tcmInfo.raw.acc.x;
     tcmAvg.rawSum.acc.y += tcmInfo.raw.acc.y;
@@ -293,7 +296,7 @@ void calcAveragesAndCopyToRaw(void) {
 void resetAverages(void) {
     tcmAvg.rawSum = (Sensors){ {0,0,0}, {0,0,0}, 0.0f, 0.0f };
     tcmAvg.sampleCount = 0;
-	ESP_LOGI(TAG, "Averages reset");
+    if (TcmDebug) ESP_LOGI(TAG, "Averages reset");
 }
 
 // ------------------------------
@@ -352,19 +355,19 @@ void dispCalibrations(void) {
         tcmInfo.magCal.tempSlope[2]);
 }
 
-void tcmPlotBinary(int serial_plot)
+void tcmDataBinary(int select)
 {
     #define TCM_BIN_SOF             0xAA
     uint8_t frame[51];              // enough for largest payload
     uint8_t idx = 0;
 
     frame[idx++] = TCM_BIN_SOF;
-    frame[idx++] = serial_plot;
+    frame[idx++] = select;
 
     uint8_t* lenPtr = &frame[idx++];
     uint8_t payloadStart = idx;
 
-    switch (serial_plot)
+    switch (select)
     {
     case 0:
         // Disabled – no payload
@@ -438,12 +441,12 @@ void tcmPlotBinary(int serial_plot)
 
     send_rs485_bytes((const uint8_t*)frame, idx);
 }
-void tcmPlotText(int serial_plot)
+void tcmDataText(int select)
 {
     // CSV output for plotting/logging
     char uartMessage[192];
 
-    switch (serial_plot)
+    switch (select)
     {
     case 0:
         // Plot-safe "disabled" frame
@@ -578,14 +581,18 @@ void tcmPlotText(int serial_plot)
 // ------------------------------
 // Initialization and Run
 // ------------------------------
-bool initTcm(int main_log_level) {
-    esp_log_level_set(TAG, main_log_level);
-	log_level = main_log_level;
+bool initTcm(int level, bool debug, int select, bool asText) {
+
+    esp_log_level_set(TAG, level);
+    TcmDebug = debug;
+    dataSelect = select;
+    tcmDataAsText = asText;
+
 
     // Wait to allow TCM to power up
-    ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
+    if (TcmDebug) ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
     vTaskDelay(pdMS_TO_TICKS(STARTUP_DELAY_MS));
-    ESP_LOGI(TAG, "Continuing initialization...");
+    if (TcmDebug) ESP_LOGI(TAG, "Continuing initialization...");
 
     resetAverages();
 	defaultCalibrations();
@@ -605,10 +612,10 @@ bool initTcm(int main_log_level) {
 	// Get TCM Info
     // Version and Serial Number do not need error checking
     getStrUsb(tcmInfo.version, sizeof(tcmInfo.version), FIRMWARE_VERSION_CMD);
-    ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
+    if (TcmDebug) ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
     getStrUsb(tcmInfo.serialNum, sizeof(tcmInfo.serialNum), SERIAL_NUMBER_CMD);
-	ESP_LOGI(TAG, "TCM Serial Number: %s", tcmInfo.serialNum);
-    ESP_LOGI(TAG, "Waiting 5 seconds before reading calibrations...");
+    if (TcmDebug) ESP_LOGI(TAG, "TCM Serial Number: %s", tcmInfo.serialNum);
+    if (TcmDebug) ESP_LOGI(TAG, "Waiting 5 seconds before reading calibrations...");
     vTaskDelay(pdMS_TO_TICKS(5000));
     float junk; // Placeholder for unused values
     if (!getFloatAscii85Usb(&junk, "RVN13", CALIBRATION_CMD, "06000008")) {
@@ -762,11 +769,11 @@ bool initTcm(int main_log_level) {
 
     dispCalibrations();
 
-    ESP_LOGI(TAG, "TCM Initialized");
+    if (TcmDebug) ESP_LOGI(TAG, "TCM Initialized");
     return true;
 }
 
-bool runTcm(int serial_plot)
+bool runTcm()
 {
     //Note: The only calculation that can be in error is temperature.
     //      This will be handled by using a defaulut value 
@@ -777,15 +784,21 @@ bool runTcm(int serial_plot)
     }
 	addRawsToRawSum(); // Increments sampleCount
     if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
-        ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
+        if (TcmDebug) ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
         calcAveragesAndCopyToRaw();
 		resetAverages(); // Sets sampleCount to 0
     }
     calcTcm();
-    dispTcm();
-    if (log_level == ESP_LOG_NONE) {
-        tcmPlotText(serial_plot);
-        tcmPlotBinary(serial_plot);
+    if (TcmDebug) dispTcm();
+    else 
+    {
+        if (tcmDataAsText) {
+            tcmDataText(dataSelect);
+        }
+        else {
+            tcmDataBinary(dataSelect);
+
+        }
     }
 	return true;
 }

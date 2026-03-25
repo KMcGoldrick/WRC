@@ -23,9 +23,19 @@
 
 #define TAG "WRC"
 
-// USB selection
-static bool useTCM = false;
-char uartMessage[192];
+// MODEs for USBport and 485port
+typedef enum {
+    DEBUG,   
+    TCM_COM, 
+    TCM_DATA
+} portModes;
+static portModes usbPort = DEBUG; // Can be debug or TCM Communication
+static portModes four85Port = DEBUG; // Can be debug or TCM data
+// When both are debug then 485 wrapback
+
+// TCMdata see myTcm.c tcmData()
+static int tcmDataSelect = 0;
+static bool tcmDataAsText = true;
 
 // Log/Plot selection
 /*
@@ -38,9 +48,7 @@ char uartMessage[192];
     •	ESP_LOG_VERBOSE
     hint: Run idf.py menuconfig, can set the default log level
 */
-static int logLevel = ESP_LOG_NONE; // Set to NONE to plot over RS485
-// Plot selection see myTcm.c tcmPlot()
-static int serial_plot = 11;
+static int logLevel = ESP_LOG_VERBOSE;
 
 // ----------------------------------------------------------------------
 // Globals
@@ -70,7 +78,6 @@ static void initLED(void) {
     };
 
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
-    //ESP_LOGI(TAG, "LED strip initialized with %d LEDs on GPIO %d", NUM_LEDS, RGB_PIN);
 }
 
 static void sequenceLED(void) {
@@ -112,6 +119,9 @@ static void runLED(void) {
     }
 }
 
+// ----------------------------------------------------------------------
+// Log Helpers
+// ----------------------------------------------------------------------
 static void init_log_uart(void) {
     uart_config_t uart_config = {
         .baud_rate = LOG_UART_BAUD,
@@ -147,30 +157,29 @@ void redirect_esp_log(void) {
 // ----------------------------------------------------------------------
 void app_main(void) {
 
-    if (logLevel == ESP_LOG_NONE) {
+    if (four85Port == TCM_DATA) {
         init_rs485();
     }
-    else {
+
+    if (usbPort == TCM_COM) {
 
         init_log_uart();
         redirect_esp_log();
     }
 
     // --- Allow 5 seconds for flashing ---
-    ESP_LOGI(TAG, "Startup delay: 5 seconds. You can flash the device now...");
+    if (usbPort == DEBUG) ESP_LOGI(TAG, "Startup delay: 5 seconds. You can flash the device now...");
     vTaskDelay(pdMS_TO_TICKS(5000));  // 5000 ms = 5 seconds
 
-    if (useTCM) {
+    if (usbPort == TCM_COM) {
         esp_log_level_set("*", logLevel);
         esp_log_level_set(TAG, logLevel);
     }
-
-    ESP_LOGI(TAG, "==============================================================");
-    ESP_LOGI(TAG, "  WRC System Startup");
-    ESP_LOGI(TAG, "  Build date: " __DATE__ " " __TIME__);
-    ESP_LOGI(TAG, "  Use TCM: %s", useTCM ? "true" : "false");
-    ESP_LOGI(TAG, "  Log Level: %d", logLevel);
-    ESP_LOGI(TAG, "  Serial Plot: %d", serial_plot);
+    if (usbPort == DEBUG) {
+        ESP_LOGI(TAG, "==============================================================");
+        ESP_LOGI(TAG, "  WRC System Startup");
+        ESP_LOGI(TAG, "  Build date: " __DATE__ " " __TIME__);
+    }
 
 #if defined(CONFIG_IDF_TARGET_ESP32S2)
     //ESP_LOGI(TAG, "  Target: ESP32-S2");
@@ -180,15 +189,15 @@ void app_main(void) {
     //ESP_LOGI(TAG, "  Target: Unknown ESP32 variant");
 #endif
 
-    ESP_LOGI(TAG, "==============================================================");
+    if (usbPort == DEBUG) ESP_LOGI(TAG, "==============================================================");
 
     // Initialize peripherals
     initLED();
     sequenceLED();
 
-    if (useTCM) {
+    if (four85Port != DEBUG) {
 
-        if (!initUsb(logLevel)) {
+        if (!initUsb(logLevel)) { //KJM what to do here
             //send_rs485("ERR:USB_INIT");
 
             for (;;) {
@@ -199,11 +208,11 @@ void app_main(void) {
                 vTaskDelay(pdMS_TO_TICKS(500));
             }
         }
-        ESP_LOGI(TAG, "USB initialized");
 
-        if (!initTcm(logLevel)) {
-            //send_rs485("ERR:TCM_INIT");
+        if (usbPort == DEBUG) ESP_LOGI(TAG, "USB initialized");
 
+        bool tcmDebug = four85Port == DEBUG;
+        if (!initTcm(logLevel, tcmDebug, tcmDataSelect, tcmDataAsText)) { //KJM what to do on 485 if TCM not ok
             for (;;) {
                 ESP_LOGE(TAG, "TCM initialization failed");
                 setPixelColor(0, 255, 0, 0);
@@ -212,10 +221,10 @@ void app_main(void) {
                 vTaskDelay(pdMS_TO_TICKS(500));
             }
         }
-        ESP_LOGI(TAG, "TCM initialized");
+        if (usbPort == DEBUG) ESP_LOGI(TAG, "TCM initialized");
     }
 
-    ESP_LOGI(TAG, "Initialization complete. Entering main loop...");
+    if (usbPort == DEBUG) ESP_LOGI(TAG, "Initialization complete. Entering main loop...");
 
     // ------------------------------------------------------------------
     // Main loop
@@ -223,22 +232,25 @@ void app_main(void) {
     while (1) {
         runLED();
 
-        ESP_LOGI(TAG, "-----------------------------------");
-        ESP_LOGI(TAG, "Loop %d", ++loopCounter);
-        uint8_t r2485Read[128];
+        if (usbPort == DEBUG) ESP_LOGI(TAG, "-----------------------------------");
+        if (usbPort == DEBUG) ESP_LOGI(TAG, "Loop %d", ++loopCounter);
+        uint8_t r2485Read[128];        
 
 
-        if (useTCM) {
-            tcmProcessOk = runTcm(serial_plot);
+        if (four85Port != DEBUG) {
+            tcmProcessOk = runTcm();
         }
         else
         {
+            char uartMessage[192];
+            memset(r2485Read, 0, sizeof(r2485Read));
             int len = read_rs485_bytes(r2485Read, sizeof(r2485Read), 1000);
             if (len > 0)
             {
                 ESP_LOG_BUFFER_HEXDUMP("Hexdump:", r2485Read, len, ESP_LOG_INFO);
                 ESP_LOGI(TAG, "RX: %d bytes", len);
 
+                r2485Read[len] = '\0';  // explicit null terminator
                 for (int i = 0; i < len; i++)
                     printf("%02X ", r2485Read[i]);
 

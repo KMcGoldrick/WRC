@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-extern bool runTcm(int serial_plot);
-extern bool initTcm(int overall_log_level);
+extern bool runTcm();
+extern bool initTcm(int level, bool debug, int select, bool asText);
 
 typedef struct {
     float x;
