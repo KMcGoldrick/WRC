@@ -160,15 +160,17 @@ void app_main(void) {
     ESP_LOGI(TAG, "Startup delay: 5 seconds. You can flash the device now...");
     vTaskDelay(pdMS_TO_TICKS(5000));  // 5000 ms = 5 seconds
 
-    //esp_log_level_set("*", logLevel);
-    //esp_log_level_set(TAG, logLevel);
+    if (useTCM) {
+        esp_log_level_set("*", logLevel);
+        esp_log_level_set(TAG, logLevel);
+    }
 
     ESP_LOGI(TAG, "==============================================================");
     ESP_LOGI(TAG, "  WRC System Startup");
     ESP_LOGI(TAG, "  Build date: " __DATE__ " " __TIME__);
-	ESP_LOGI(TAG, "  Use TCM: %s", useTCM ? "true" : "false");   
+    ESP_LOGI(TAG, "  Use TCM: %s", useTCM ? "true" : "false");
     ESP_LOGI(TAG, "  Log Level: %d", logLevel);
-	ESP_LOGI(TAG, "  Serial Plot: %d", serial_plot);    
+    ESP_LOGI(TAG, "  Serial Plot: %d", serial_plot);
 
 #if defined(CONFIG_IDF_TARGET_ESP32S2)
     //ESP_LOGI(TAG, "  Target: ESP32-S2");
@@ -179,7 +181,7 @@ void app_main(void) {
 #endif
 
     ESP_LOGI(TAG, "==============================================================");
-    
+
     // Initialize peripherals
     initLED();
     sequenceLED();
@@ -221,37 +223,33 @@ void app_main(void) {
     while (1) {
         runLED();
 
-		ESP_LOGI(TAG, "-----------------------------------");
+        ESP_LOGI(TAG, "-----------------------------------");
         ESP_LOGI(TAG, "Loop %d", ++loopCounter);
-        uint8_t response[128];
+        uint8_t r2485Read[128];
 
-        int len = read_rs485_bytes(response, sizeof(response), 1000);
-
-        if (len > 0)
-        {
-            ESP_LOG_BUFFER_HEXDUMP("Hexdump:", response, len, ESP_LOG_INFO);
-        }
-
-        if (len > 0)
-        {
-            ESP_LOGI(TAG, "RX: %d bytes", len);
-
-            for (int i = 0; i < len; i++)
-                printf("%02X ", response[i]);
-
-            printf("\n");
-        }
 
         if (useTCM) {
             tcmProcessOk = runTcm(serial_plot);
         }
-        else 
+        else
         {
-            snprintf(uartMessage, sizeof(uartMessage),
-                "main loop: %d\n", loopCounter);
-            send_rs485_text(uartMessage);
-        }
+            int len = read_rs485_bytes(r2485Read, sizeof(r2485Read), 1000);
+            if (len > 0)
+            {
+                ESP_LOG_BUFFER_HEXDUMP("Hexdump:", r2485Read, len, ESP_LOG_INFO);
+                ESP_LOGI(TAG, "RX: %d bytes", len);
 
-        vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
+                for (int i = 0; i < len; i++)
+                    printf("%02X ", r2485Read[i]);
+
+                printf("\n");
+            }
+
+            snprintf(uartMessage, sizeof(uartMessage),
+                "rs485: loop cnt: %d rs485Read:%s\n", loopCounter, r2485Read);
+            send_rs485_text(uartMessage);
+
+            vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
+        }
     }
 }

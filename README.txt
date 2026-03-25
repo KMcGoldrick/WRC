@@ -112,7 +112,8 @@ Serial / plotting
 - tcmPlot() prints ASCII lines using printf — these go to the UART console (UART0) by default and are suitable for PC tools like SerialPlot when you connect the board UART to the PC via a USB-to-UART adapter.
 - If you need the data on the same channel as `ESP_LOG*` output you can use the logging API (ESP_LOGI/ESP_LOGV), but ESP_LOG output includes prefixes (level, time, tag). For raw "v1 v2 v3" lines (preferred by SerialPlot) keep using printf or retarget stdout to a CDC device.
 - If you expect to stream directly to a PC over USB (so printf appears as a COM/TTY on the PC), use the USB Device CDC driver (TinyUSB) and retarget stdout — this project currently uses USB Host (talks to a TCM peripheral), so sending to the PC via that same host link is not the default behavior.
-- Use PuTTY
+- Use PuTTY COM3 use 2nd red pot 
+- Level Shifter
 
 Troubleshooting
 - LEDs always red: indicates TCM runtime not OK or initialization failed; inspect logs via serial console (use __idf.py monitor__).
