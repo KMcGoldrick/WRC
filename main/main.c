@@ -23,15 +23,25 @@
 
 #define TAG "WRC"
 
+
+/*
+On the ESP32 we are using 2 ports.
+The first port is the USB-C connector. This can be used for diagnostics or communicating with the TCM.
+The second port is the RS485 on pins 8,9. This can be used for diagnostics or communicating TCM data.
+
+Configuratuions:
+USB DEBUG       485 (Any Setting)   Loop mesages on both ports. Data read on 485 is sent over USB.
+USB TCM_COM     485 TCM_DATA    Operational mode. ESP32 communicates with the TCM over USB, and sends data over 485.
+USB TCM_COM     485 DEBUG       Debug mode for TCM algorithm, sends debug info on 485 
+*/
 // MODEs for USBport and 485port
 typedef enum {
     DEBUG,   
     TCM_COM, 
     TCM_DATA
 } portModes;
-static portModes usbPort = DEBUG; // Can be debug or TCM Communication
-static portModes four85Port = DEBUG; // Can be debug or TCM data
-// When both are debug then 485 wrapback
+static portModes usbPort = TCM_COM; // Can be debug or TCM Communication
+static portModes four85Port = TCM_DATA; // Can be debug or TCM data
 
 // TCMdata see myTcm.c tcmData()
 static int tcmDataSelect = 0;
@@ -157,24 +167,18 @@ void redirect_esp_log(void) {
 // ----------------------------------------------------------------------
 void app_main(void) {
 
-    if (four85Port == TCM_DATA) {
-        init_rs485();
-    }
-
-    if (usbPort == TCM_COM) {
-
-        init_log_uart();
-        redirect_esp_log();
-    }
+    init_rs485();
 
     // --- Allow 5 seconds for flashing ---
     if (usbPort == DEBUG) ESP_LOGI(TAG, "Startup delay: 5 seconds. You can flash the device now...");
     vTaskDelay(pdMS_TO_TICKS(5000));  // 5000 ms = 5 seconds
 
+    //Set loglevel to NONE when using USB for TCM Comm
     if (usbPort == TCM_COM) {
-        esp_log_level_set("*", logLevel);
-        esp_log_level_set(TAG, logLevel);
+        esp_log_level_set("*", ESP_LOG_NONE);
+        esp_log_level_set(TAG, ESP_LOG_NONE);
     }
+
     if (usbPort == DEBUG) {
         ESP_LOGI(TAG, "==============================================================");
         ESP_LOGI(TAG, "  WRC System Startup");
@@ -195,10 +199,10 @@ void app_main(void) {
     initLED();
     sequenceLED();
 
-    if (four85Port != DEBUG) {
+    // Intialize TCM communciations over USB
+    if (usbPort == TCM_COM) {
 
-        if (!initUsb(logLevel)) { //KJM what to do here
-            //send_rs485("ERR:USB_INIT");
+        if (!initUsbHostMode(logLevel)) { //KJM what to do here
 
             for (;;) {
                 ESP_LOGE(TAG, "USB initialization failed");
@@ -209,7 +213,7 @@ void app_main(void) {
             }
         }
 
-        if (usbPort == DEBUG) ESP_LOGI(TAG, "USB initialized");
+        ESP_LOGI(TAG, "USB initialized");
 
         bool tcmDebug = four85Port == DEBUG;
         if (!initTcm(logLevel, tcmDebug, tcmDataSelect, tcmDataAsText)) { //KJM what to do on 485 if TCM not ok
@@ -221,7 +225,6 @@ void app_main(void) {
                 vTaskDelay(pdMS_TO_TICKS(500));
             }
         }
-        if (usbPort == DEBUG) ESP_LOGI(TAG, "TCM initialized");
     }
 
     if (usbPort == DEBUG) ESP_LOGI(TAG, "Initialization complete. Entering main loop...");
@@ -232,34 +235,35 @@ void app_main(void) {
     while (1) {
         runLED();
 
-        if (usbPort == DEBUG) ESP_LOGI(TAG, "-----------------------------------");
-        if (usbPort == DEBUG) ESP_LOGI(TAG, "Loop %d", ++loopCounter);
-        uint8_t r2485Read[128];        
+        uint8_t rs485Read[128];
+        char uartMessage[192];
+        memset(rs485Read, 0, sizeof(rs485Read));
 
-
-        if (four85Port != DEBUG) {
-            tcmProcessOk = runTcm();
+        int len = read_rs485_bytes(rs485Read, sizeof(rs485Read) - 1, 1000);
+        rs485Read[len > 0 ? len : 0] = '\0';  // always null-terminate
+        if (len > 0) {
+            if (len == 1) {
+                tcmDataSelect = (int)(rs485Read[0]-48);  // first byte selects plot, not pointer
+            }
+            if (len == 2) {
+                tcmDataSelect = (int)(rs485Read[1] - 48) + 10;  // first and second byte selects plot, not pointer
+            }
         }
-        else
-        {
-            char uartMessage[192];
-            memset(r2485Read, 0, sizeof(r2485Read));
-            int len = read_rs485_bytes(r2485Read, sizeof(r2485Read), 1000);
-            if (len > 0)
-            {
-                ESP_LOG_BUFFER_HEXDUMP("Hexdump:", r2485Read, len, ESP_LOG_INFO);
+
+        if (usbPort == TCM_COM) {
+
+            tcmProcessOk = runTcm(tcmDataSelect);
+        }
+        else {// RS485 loopback/debug
+            if (len > 0) {
+                ESP_LOG_BUFFER_HEXDUMP("Hexdump:", rs485Read, len, ESP_LOG_INFO);
                 ESP_LOGI(TAG, "RX: %d bytes", len);
-
-                r2485Read[len] = '\0';  // explicit null terminator
-                for (int i = 0; i < len; i++)
-                    printf("%02X ", r2485Read[i]);
-
-                printf("\n");
             }
 
             snprintf(uartMessage, sizeof(uartMessage),
-                "rs485: loop cnt: %d rs485Read:%s\n", loopCounter, r2485Read);
+                "loop cnt: %d rx_bytes: %d tcmDataSelect %d\n", ++loopCounter, len, tcmDataSelect);
             send_rs485_text(uartMessage);
+            ESP_LOGI(TAG, "%s",uartMessage);
 
             vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS));
         }

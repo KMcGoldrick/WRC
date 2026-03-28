@@ -16,7 +16,7 @@ void send_rs485_bytes(const uint8_t* data, size_t len);
 void send_rs485_text(const char* text);
 
 // Initialize USB host
-extern bool initUsb(int log_level);
+extern bool initUsbHostMode(int log_level);
 
 // Milliseconds since boot
 extern unsigned long millis(void);

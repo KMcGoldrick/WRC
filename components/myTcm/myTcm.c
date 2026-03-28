@@ -773,8 +773,9 @@ bool initTcm(int level, bool debug, int select, bool asText) {
     return true;
 }
 
-bool runTcm()
+bool runTcm(int select)
 {
+    dataSelect = select;
     //Note: The only calculation that can be in error is temperature.
     //      This will be handled by using a defaulut value 
     bool success = getSensorsRawUsb(&tcmInfo.raw, SENSOR_READINGS_CMD);

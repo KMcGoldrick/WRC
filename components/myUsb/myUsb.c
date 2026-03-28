@@ -469,7 +469,7 @@ void client_taskUsb(void* arg)
     }
 }
 
-bool initUsb(int log_level)
+bool initUsbHostMode(int log_level)
 {
     esp_log_level_set(TAG, log_level);
     usb_host_config_t host_config = {
