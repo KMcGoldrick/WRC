@@ -44,8 +44,9 @@ static portModes usbPort = TCM_COM; // Can be debug or TCM Communication
 static portModes four85Port = TCM_DATA; // Can be debug or TCM data
 
 // TCMdata see myTcm.c tcmData()
-static int tcmDataSelect = 0;
-static bool tcmDataAsText = true;
+static int tcmDataSelect = 1;
+static bool tcmAverage = false;
+static bool tcmDataAsText = false;
 
 // Log/Plot selection
 /*
@@ -241,18 +242,40 @@ void app_main(void) {
 
         int len = read_rs485_bytes(rs485Read, sizeof(rs485Read) - 1, 1000);
         rs485Read[len > 0 ? len : 0] = '\0';  // always null-terminate
+        // Use a command prefix so 't', 'b', and digits are never ambiguous
+        // Send: "!t"  "!b"  "!5"  "!11"
+        // Raw single bytes are too fragile when binary frames are in flight
+
         if (len > 0) {
-            if (len == 1) {
-                tcmDataSelect = (int)(rs485Read[0]-48);  // first byte selects plot, not pointer
-            }
-            if (len == 2) {
-                tcmDataSelect = (int)(rs485Read[1] - 48) + 10;  // first and second byte selects plot, not pointer
+            if (rs485Read[0] == '[' && len <= 4) {          // command prefix
+                    if (len >= 2) {
+                    char cmd = rs485Read[1];
+                    if (cmd == 't') {
+                        tcmDataAsText = true;
+                    }
+                    else if (cmd == 'b') {
+                        tcmDataAsText = false;
+                    }
+                    else if (cmd == 'a') {
+                        tcmAverage = !tcmAverage;
+                    }
+                    else if (cmd >= '0' && cmd <= '9') {
+                        int val = cmd - '0';
+                        if (len >= 3 && rs485Read[2] >= '0' && rs485Read[2] <= '9') {
+                            val = val * 10 + (rs485Read[2] - '0');
+                        }
+                        tcmDataSelect = val;
+                    }
+                }
+                // flush anything left in buffer
+                uint8_t flush[64];
+                while (read_rs485_bytes(flush, sizeof(flush), 10) > 0) {}
             }
         }
 
         if (usbPort == TCM_COM) {
 
-            tcmProcessOk = runTcm(tcmDataSelect);
+            tcmProcessOk = runTcm(tcmAverage, tcmDataAsText,tcmDataSelect);
         }
         else {// RS485 loopback/debug
             if (len > 0) {

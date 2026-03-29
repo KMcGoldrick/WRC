@@ -27,9 +27,10 @@ TcmInfo tcmInfo;
 TcmAverage tcmAvg;
 
 // Mode items
-bool TcmDebug = false;
+bool tcmDebug = false;
 int dataSelect = 0;
 bool tcmDataAsText = false;
+bool tcmAverage = false;
 
 // ------------------------------
 // Placeholder: Calibration values
@@ -45,7 +46,7 @@ bool defaultCalibrations(void) {
         .softIron = { {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} },
         .hardIron = { 0.0f, 0.0f, 0.0f }
     };
-    if (TcmDebug) ESP_LOGI(TAG, "Set Default Calibrations");
+    if (tcmDebug) ESP_LOGI(TAG, "Set Default Calibrations");
     return true;
 }
 
@@ -264,7 +265,7 @@ void calcTcm(void) {
 // ------------------------------
 void addRawsToRawSum(void) {
 	tcmAvg.sampleCount++;
-    if (TcmDebug) ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
+    if (tcmDebug) ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
 
     tcmAvg.rawSum.acc.x += tcmInfo.raw.acc.x;
     tcmAvg.rawSum.acc.y += tcmInfo.raw.acc.y;
@@ -296,7 +297,7 @@ void calcAveragesAndCopyToRaw(void) {
 void resetAverages(void) {
     tcmAvg.rawSum = (Sensors){ {0,0,0}, {0,0,0}, 0.0f, 0.0f };
     tcmAvg.sampleCount = 0;
-    if (TcmDebug) ESP_LOGI(TAG, "Averages reset");
+    if (tcmDebug) ESP_LOGI(TAG, "Averages reset");
 }
 
 // ------------------------------
@@ -584,15 +585,15 @@ void tcmDataText(int select)
 bool initTcm(int level, bool debug, int select, bool asText) {
 
     esp_log_level_set(TAG, level);
-    TcmDebug = debug;
+    tcmDebug = debug;
     dataSelect = select;
     tcmDataAsText = asText;
 
 
     // Wait to allow TCM to power up
-    if (TcmDebug) ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
+    if (tcmDebug) ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
     vTaskDelay(pdMS_TO_TICKS(STARTUP_DELAY_MS));
-    if (TcmDebug) ESP_LOGI(TAG, "Continuing initialization...");
+    if (tcmDebug) ESP_LOGI(TAG, "Continuing initialization...");
 
     resetAverages();
 	defaultCalibrations();
@@ -612,10 +613,10 @@ bool initTcm(int level, bool debug, int select, bool asText) {
 	// Get TCM Info
     // Version and Serial Number do not need error checking
     getStrUsb(tcmInfo.version, sizeof(tcmInfo.version), FIRMWARE_VERSION_CMD);
-    if (TcmDebug) ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
+    if (tcmDebug) ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
     getStrUsb(tcmInfo.serialNum, sizeof(tcmInfo.serialNum), SERIAL_NUMBER_CMD);
-    if (TcmDebug) ESP_LOGI(TAG, "TCM Serial Number: %s", tcmInfo.serialNum);
-    if (TcmDebug) ESP_LOGI(TAG, "Waiting 5 seconds before reading calibrations...");
+    if (tcmDebug) ESP_LOGI(TAG, "TCM Serial Number: %s", tcmInfo.serialNum);
+    if (tcmDebug) ESP_LOGI(TAG, "Waiting 5 seconds before reading calibrations...");
     vTaskDelay(pdMS_TO_TICKS(5000));
     float junk; // Placeholder for unused values
     if (!getFloatAscii85Usb(&junk, "RVN13", CALIBRATION_CMD, "06000008")) {
@@ -769,29 +770,14 @@ bool initTcm(int level, bool debug, int select, bool asText) {
 
     dispCalibrations();
 
-    if (TcmDebug) ESP_LOGI(TAG, "TCM Initialized");
+    if (tcmDebug) ESP_LOGI(TAG, "TCM Initialized");
     return true;
 }
 
-bool runTcm(int select)
+void outputData()
 {
-    dataSelect = select;
-    //Note: The only calculation that can be in error is temperature.
-    //      This will be handled by using a defaulut value 
-    bool success = getSensorsRawUsb(&tcmInfo.raw, SENSOR_READINGS_CMD);
-    if (!success) {
-        ESP_LOGE(TAG, "Failed to get raw sensor data");
-        return false;
-    }
-	addRawsToRawSum(); // Increments sampleCount
-    if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
-        if (TcmDebug) ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
-        calcAveragesAndCopyToRaw();
-		resetAverages(); // Sets sampleCount to 0
-    }
-    calcTcm();
-    if (TcmDebug) dispTcm();
-    else 
+    if (tcmDebug) dispTcm();
+    else
     {
         if (tcmDataAsText) {
             tcmDataText(dataSelect);
@@ -800,6 +786,36 @@ bool runTcm(int select)
             tcmDataBinary(dataSelect);
 
         }
+    }
+}
+
+bool runTcm(bool average, bool dataAsText, int select)
+{
+    tcmAverage = average;
+    tcmDataAsText = dataAsText;
+    dataSelect = select;
+    //Note: The only calculation that can be in error is temperature.
+    //      This will be handled by using a defaulut value 
+    bool success = getSensorsRawUsb(&tcmInfo.raw, SENSOR_READINGS_CMD);
+    if (!success) {
+        ESP_LOGE(TAG, "Failed to get raw sensor data");
+        return false;
+    }
+    if (tcmAverage) 
+    {
+        addRawsToRawSum(); // Increments sampleCount
+        if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
+            if (tcmDebug) ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
+            calcAveragesAndCopyToRaw();
+            resetAverages(); // Sets sampleCount to 0
+            calcTcm();
+            outputData();
+        }
+    }
+    else
+    {
+        calcTcm();
+        outputData();
     }
 	return true;
 }

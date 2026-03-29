@@ -1,132 +1,161 @@
-﻿# WRC (Water Resource Controller) Firmware
+# WRC (Water Resource Controller) Firmware
 
-I (4458) USB: Attempting to connect device VID=0x2047 PID=0x08AE
-I (4458) USB: Found 1 USB device(s)
-I (4458) USB: VID=0x2047 PID=0x08AE device found at address 1
-V (4458) USB: bNumInterfaces = 3
-V (4458) USB: Interface 0: Class=0x08 SubClass=0x06 Protocol=0x50 NumEP=2
-V (4468) USB: Interface 1: Class=0x02 SubClass=0x02 Protocol=0x01 NumEP=1
-I (4468) USB: Attempting to open CDC interface 1
-D (4478) cdc_acm: Checking list of opened USB devices
-D (4478) cdc_acm: Checking list of connected USB devices
-D (4488) cdc_acm: Submitting poll for BULK IN transfer
-D (4488) cdc_acm: Submitting poll for INTR IN transfer
-I (4498) USB: Opened CDC interface successfully
-I (4498) USB: Device connected and switched to CDC-ACM
-V (4508) USB: Sending command: GFV
-V (4508) cdc_acm: Submitting BULK OUT transfer chunk: 4 bytes (remaining: 4)
-D (4518) cdc_acm: out/ctrl xfer cb
-D (4518) cdc_acm: in xfer cb
-V (4518) USB: Data received len = 16
-V (4528) USB: 0x3fc9c744   0a 0d 47 46 56 20 30 36  31 2e 39 2e 30 31 0d 0a  |..GFV 061.9.01..|
-D (4528) cdc_acm: Submitting poll for BULK IN transfer
-V (4538) USB: Sent command: GFV
-I (4538) USB: getStrUsb: sent command 'GFV' (try 1/3)
-I (4548) USB: getStrUsb: parsed 'GFV' = '1.9.01'
-I (4548) TCM: TCM Version: 1.9.01
+## Short description
+Firmware for an ESP32-S3 based data-logger that reads a Lowell Instruments TCM sensor over USB CDC,
+computes temperature, accelerometer, magnetometer, and roll/pitch/yaw, and streams output over RS485.
 
+## Hardware variants
 
+| Name          | Chip         | Flash | PSRAM | Notes                        |
+|---------------|--------------|-------|-------|------------------------------|
+| Lonely Binary | ESP32-S3 QFN56 r0.2 | 16MB | 8MB (AP_3v3) | No SPIRAM in config |
+| Tiny          | ESP32-S3 QFN56 r0.2 | 4MB  | 2MB (AP_3v3) | SPIRAM quad mode, 40MHz      |
 
-Purple 19
-Grey 20 
-
-Lonely Binary
-Chip is ESP32-S3 (QFN56) (revision v0.2)
-Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)
-Crystal is 40MHz
-SERIAL FLASHER CONFIG CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
-# CONFIG_SPIRAM is not set
-
-Tiny
-Chip is ESP32-S3 (QFN56) (revision v0.2)
-Features: WiFi, BLE, Embedded Flash 4MB (XMC), Embedded PSRAM 2MB (AP_3v3)
-Crystal is 40MHz USB mode: USB-Serial/JTAG
-SERIAL FLASHER CONFIG CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
-CONFIG_SPIRAM=y
-	CONFIG_SPIRAM_MODE_QUAD=y
-	CONFIG_SPIRAM_TYPE_AUTO=y
-	CONFIG_SPIRAM_CLK_IO=30
-	CONFIG_SPIRAM_CS_IO=26
-	CONFIG_SPIRAM_SPEED_40M=y
-	CONFIG_SPIRAM_SPEED=40
-	CONFIG_SPIRAM_BOOT_HW_INIT=y
-	CONFIG_SPIRAM_BOOT_INIT=y
-	CONFIG_SPIRAM_PRE_CONFIGURE_MEMORY_PROTECTION=y
-	CONFIG_SPIRAM_USE_MALLOC=y
-	CONFIG_SPIRAM_MEMTEST=y
-	CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
-	CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
-	CONFIG_ESP32S3_SPIRAM_SUPPORT=y
-	CONFIG_DEFAULT_PSRAM_CLK_IO=30
-	CONFIG_DEFAULT_PSRAM_CS_IO=26
-CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
-
-Short description
-- Firmware for an ESP32-S2 / ESP32-S3 based data-logger that reads a TCM sensor over USB (CDC), 
-  computes temperature/accel/mag/RPY, logs info, and provides simple LED status/serial-plot output.
-- TCM is a Lowell TCM device (e.g. TCM2, TCM3) connected via USB CDC.	
-- S
-
-Features
+## Features
 - USB Host CDC connection to a TCM device (myUsb.c)
 - Sensor acquisition, calibration and processing (myTcm.c)
 - NVS logging utilities (myNvs.c)
 - RGB LED status indicators (LED_MODEL_SK6812 via led_strip)
-- Simple serial plotting output (tcmPlot) and configurable logging via ESP-IDF logging API
+- RS485 binary and CSV text output with runtime-selectable dataset
+- Runtime command interface over RS485 (see Commands section)
 
-Repository layout
+## Repository layout
 - main/main.c         — application entry, LED handling, main loop
-- myTcm/myTcm.c/.h    — TCM sensor interface, calculations, tcmPlot
-- myUsb/myUsb.c/.h    — USB host, CDC handling, helper I/O
-- myNvs/*             — persistent log (NVS) helpers
-- Includes/WRCDefs.h  — project-specific defines (pins, timings, TCM VID/PID, constants)
+- myTcm/myTcm.c/.h   — TCM sensor interface, calculations, data output
+- myUsb/myUsb.c/.h   — USB host, CDC handling, helper I/O
+- myNvs/*            — persistent log (NVS) helpers
+- Includes/WRCDefs.h — project-specific defines (pins, timings, TCM VID/PID, constants)
 
-Requirements
-- ESP-IDF (compatible version for chosen target)
-- Toolchain for ESP32-S2 or ESP32-S3
-- USB host capable board (ESP32-S2/S3) and the TCM device or a USB-serial adapter for UART
+## Port configuration
 
-Build & flash
-- From project root use the standard ESP-IDF commands:
-  - Configure: __idf.py menuconfig__
-  - Build: __idf.py build__
-  - Flash: __idf.py flash__
-  - Monitor: __idf.py monitor__
-- Use __idf.py menuconfig__ to change default console baud, logging backend and other platform settings.
+Two ports are used. Set `usbPort` and `four85Port` in main.c to select the mode.
 
-Configuration notes
-- Logging level: change `overall_log_level` in main/main.c or set default via __idf.py menuconfig__.
-- Hardware constants and timings are in Includes/WRCDefs.h (NUM_LEDS, RGB_PIN, LED_TIME_MS, STARTUP_DELAY_MS, MAIN_LOOP_RATE_MS, TCM_VID, TCM_PID, etc.).
-- Serial plotting: control which data are emitted by changing the global `serial_plot` (see myTcm.c:tcmPlot). `plotting_all_loops` controls whether tcmPlot runs on every loop or only after averaging.
+| usbPort  | four85Port | Behavior                                                                 |
+|----------|------------|--------------------------------------------------------------------------|
+| DEBUG    | any        | RS485 loopback. Bytes received on 485 are echoed back with loop counter. |
+| TCM_COM  | TCM_DATA   | Operational mode. ESP32 reads TCM over USB, streams data over 485.       |
+| TCM_COM  | DEBUG      | TCM algorithm debug. Human-readable sensor data sent over 485.           |
 
-LED behavior (what the user sees)
-- Startup sweep: sequenceLED cycles pixels red → green → blue (visual boot confirmation).
-- Normal running: whole strip blinks green (heartbeat) when TCM processing is OK.
-- Runtime TCM error: whole strip shows steady red.
-- Fatal init errors:
-  - USB init failure: LED 0 flashes red repeatedly.
-  - TCM init failure: LED 0 flashes yellow repeatedly.
-Notes: setPixelColor currently calls led_strip_refresh per pixel (simple, but not optimal for large strips).
+## RS485 runtime commands
 
-Serial / plotting
-- tcmPlot() prints ASCII lines using printf — these go to the UART console (UART0) by default and are suitable for PC tools like SerialPlot when you connect the board UART to the PC via a USB-to-UART adapter.
-- If you need the data on the same channel as `ESP_LOG*` output you can use the logging API (ESP_LOGI/ESP_LOGV), but ESP_LOG output includes prefixes (level, time, tag). For raw "v1 v2 v3" lines (preferred by SerialPlot) keep using printf or retarget stdout to a CDC device.
-- If you expect to stream directly to a PC over USB (so printf appears as a COM/TTY on the PC), use the USB Device CDC driver (TinyUSB) and retarget stdout — this project currently uses USB Host (talks to a TCM peripheral), so sending to the PC via that same host link is not the default behavior.
-- Use PuTTY COM3 use 2nd red pot 
-- Level Shifter
+Send commands from the PC over RS485 using the `[` prefix character.
+Commands must be short (≤ 4 bytes). Binary frame data is automatically ignored.
 
-Troubleshooting
-- LEDs always red: indicates TCM runtime not OK or initialization failed; inspect logs via serial console (use __idf.py monitor__).
-- No serial plot data: ensure you are connected to the board UART (or retargeted USB CDC), confirm `serial_plot` ≠ 0 and `plotting_all_loops` settings.
-- USB / CDC errors: confirm the TCM device is powered and VID/PID in WRCDefs.h match the device; check myUsb logs (TAG = "USB").
-- High update rate causing timing issues: sending large amounts of blocking USB/UART data from the main loop can block processing — consider a dedicated send task or message queue.
+| Command | Effect                          |
+|---------|---------------------------------|
+| `[t`    | Switch output to text (CSV)     |
+| `[b`    | Switch output to binary         | Default = binary
+| '[a'    | Toggle average mode on/off      |
+| `[0`–`[9` | Select dataset 0–9            |
+| `[10`–`[11` | Select dataset 10–11        |
 
-Extending the project
-- Optimize LED writes by batching pixel updates and calling led_strip_refresh once.
-- Add a USB Device CDC (TinyUSB) configuration to present the ESP as a serial device to a host PC and retarget stdout.
-- Implement non-blocking or queued serial sends to avoid blocking the main loop.
-- Add a README section for calibration file formats, tilt-curve integration and RS485 routing if those features are added.
+## Average mode  Default = not average
+Average mode averages 20 samples before calculating values.
+As a result, average mode only send data every 20 seconds.
 
-Contacts / references
-- ESP-IDF documentation: refer to your installed ESP-IDF docs for USB Host / CDC, led_strip and logging backends.
-- Inspect WRCDefs.h for compile-time settings and hardware pinouts.
+## Dataset reference
+
+| ID | Content                              | Text columns                        | Binary bytes |
+|----|--------------------------------------|-------------------------------------|--------------|
+| 0  | Disabled                             | 0,0,0,0                             | 0            |
+| 1  | Heading + velocity                   | heading, north, east                | 12           | Default
+| 2  | Roll / Pitch / Yaw (radians)         | roll, pitch, yaw                    | 12           |
+| 3  | Accelerometer raw + scaled           | rx,ry,rz, sx,sy,sz                  | 18           |
+| 4  | Magnetometer raw + scaled            | rx,ry,rz, sx,sy,sz                  | 18           |
+| 5  | Temperature + battery                | raw_t, temp_C, raw_b, batt_V        | 12           |
+| 6  | Version + serial number              | version, serial                     | 24           |
+| 7  | Temperature calibration (5 floats)   | TMO,TMR,TMA,TMB,TMC                 | 20           |
+| 8  | Accel offsets + cubic (6 floats)     | ox,oy,oz, cx,cy,cz                  | 24           |
+| 9  | Accel gain matrix (9 floats)         | 3x3 matrix row-major                | 36           |
+| 10 | Mag soft + hard iron (12 floats)     | 3x3 soft-iron + 3 hard-iron         | 48           |
+| 11 | Mag temp compensation (4 floats)     | tempRef, TMX, TMY, TMZ              | 16           |
+
+Binary frame format: `0xAA | select | payload_len | payload bytes`
+
+## Binary output — Python decoder example
+
+```python
+import serial, struct
+
+ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
+
+while True:
+    sof = ser.read(1)
+    if sof != b'\xaa':
+        continue
+    select = ser.read(1)[0]
+    length = ser.read(1)[0]
+    payload = ser.read(length)
+
+    if select == 1:
+        heading, north, east = struct.unpack('<fff', payload)
+        print(f"Heading: {heading:.2f}  N: {north:.3f}  E: {east:.3f}")
+    elif select == 2:
+        roll, pitch, yaw = struct.unpack('<fff', payload)
+        print(f"Roll: {roll:.3f}  Pitch: {pitch:.3f}  Yaw: {yaw:.3f}")
+    elif select == 5:
+        raw_t, temp, raw_b, batt = struct.unpack('<HfHf', payload)
+        print(f"Temp: {temp:.2f}C  Batt: {batt:.2f}V")
+```
+
+## LED behavior
+
+- Startup sweep: red → green → blue (boot confirmation)
+- Normal running: strip blinks green (heartbeat, TCM OK)
+- TCM runtime error: strip solid red
+- USB init failure: LED 0 flashes blue
+- TCM init failure: LED 0 flashes red
+
+Note: setPixelColor calls led_strip_refresh per pixel — not optimal for large strips.
+
+## Build & flash
+
+Use standard ESP-IDF commands from the project root:
+- Configure:  idf.py menuconfig
+- Build:      idf.py build
+- Flash:      idf.py flash
+- Monitor:    idf.py monitor
+
+## Configuration notes
+
+- Port modes: set `usbPort` and `four85Port` in main.c
+- Dataset and format: set `tcmDataSelect` (0–11) and `tcmDataAsText` (true/false) in main.c,
+  or change them at runtime via RS485 commands
+- Hardware constants and pin assignments: Includes/WRCDefs.h
+- Logging level: set `logLevel` in main.c or via idf.py menuconfig
+
+## Known limitations
+
+- speedFromTilt() is not implemented — returns a placeholder value (MAGIC/10.0).
+  All velocity (current.north, current.east) derived from speed is therefore invalid.
+- setPixelColor calls led_strip_refresh on every pixel write; refactor to batch if
+  strip length increases.
+- Main loop is synchronous/blocking — large binary frames or slow RS485 can delay
+  TCM polling. Consider a dedicated TX task if timing becomes critical.
+
+## Troubleshooting
+
+- LEDs always red: TCM runtime error or init failure. Check logs via idf.py monitor.
+- Cannot switch from binary back to text: confirm command uses '[' prefix (e.g. "[t").
+  Single bare bytes are unreliable when binary frames are in flight on the bus.
+- USB / CDC errors: confirm TCM is powered, VID/PID in WRCDefs.h matches device.
+  Expected: VID=0x2047 PID=0x08AE.
+- No RS485 output: confirm usbPort and four85Port modes, check baud rate matches receiver.
+- Junk at end of RS485 messages: ensure buffer is null-terminated after read and
+  use rx_bytes count rather than %s formatting on binary buffers.
+
+## Monitoring RS485 binary output
+
+PuTTY will display binary frames as garbage characters. Use one of:
+- Serial Studio (Win/Mac/Linux) — live hex + plot
+- RealTerm (Windows) — raw hex display
+- CoolTerm (Mac/Windows) — hex view mode
+- Python decoder script (see above)
+- PuTTY session logging to file, then inspect with a hex editor
+
+PuTTY connection: COM3, baud per WRCDefs.h LOG_UART_BAUD. Use second red pot for level shifting.
+
+## References
+- ESP-IDF documentation for USB Host / CDC, led_strip, and logging backends
+- Lowell Instruments TCM documentation for sensor commands and calibration format
+- WRCDefs.h for all compile-time hardware settings and pinouts
