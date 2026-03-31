@@ -776,7 +776,10 @@ bool initTcm(int level, bool debug, int select, bool asText) {
 
 void outputData()
 {
-    if (tcmDebug) dispTcm();
+    if (tcmDebug) 
+    {
+        dispTcm();
+    }
     else
     {
         if (tcmDataAsText) {
@@ -789,8 +792,9 @@ void outputData()
     }
 }
 
-bool runTcm(bool average, bool dataAsText, int select)
+bool runTcm(bool debug, bool average, bool dataAsText, int select)
 {
+    tcmDebug = debug;
     tcmAverage = average;
     tcmDataAsText = dataAsText;
     dataSelect = select;

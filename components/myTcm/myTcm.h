@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-extern bool runTcm(bool average, bool dataAsText, int select);
+extern bool runTcm(bool debug, bool average, bool dataAsText, int select);
 extern bool initTcm(int level, bool debug, int select, bool asText);
 
 typedef struct {

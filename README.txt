@@ -33,7 +33,7 @@ Two ports are used. Set `usbPort` and `four85Port` in main.c to select the mode.
 | usbPort  | four85Port | Behavior                                                                 |
 |----------|------------|--------------------------------------------------------------------------|
 | DEBUG    | any        | RS485 loopback. Bytes received on 485 are echoed back with loop counter. |
-| TCM_COM  | TCM_DATA   | Operational mode. ESP32 reads TCM over USB, streams data over 485.       |
+| TCM_COM  | TCM_DATA   | Operational mode. ESP32 reads TCM over USB, streams data over 485.       | Default
 | TCM_COM  | DEBUG      | TCM algorithm debug. Human-readable sensor data sent over 485.           |
 
 ## RS485 runtime commands
@@ -43,15 +43,16 @@ Commands must be short (≤ 4 bytes). Binary frame data is automatically ignored
 
 | Command | Effect                          |
 |---------|---------------------------------|
-| `[t`    | Switch output to text (CSV)     |
-| `[b`    | Switch output to binary         | Default = binary
-| '[a'    | Toggle average mode on/off      |
+| `[t`    | Switch output to text (CSV)     | Default = binary Sets four85port to TCM_DATA
+| `[b`    | Switch output to binary         | Default = binary Sets four85port to TCM_DATA 
+| '[a'    | Toggle average mode on/off      | Default = off
+| '[w'    | Enter 485 wrapback mode         | 
+| '[d'    | Sets four85port to TCM_DEBUG    |
 | `[0`–`[9` | Select dataset 0–9            |
 | `[10`–`[11` | Select dataset 10–11        |
 
-## Average mode  Default = not average
 Average mode averages 20 samples before calculating values.
-As a result, average mode only send data every 20 seconds.
+As a result, average mode only sends data every 20 seconds.
 
 ## Dataset reference
 
