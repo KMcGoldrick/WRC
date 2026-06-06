@@ -257,7 +257,7 @@ void app_main(void) {
         int len = read_rs485_bytes(rs485Read, sizeof(rs485Read) - 1, 1000);
         rs485Read[len > 0 ? len : 0] = '\0';  // always null-terminate
         // Use a command prefix so 't', 'b', and digits are never ambiguous
-        // Send: "!t"  "!b"  "!5"  "!11"
+        // Send: "[t"  "[b"  "[5"  "[11"
         // Raw single bytes are too fragile when binary frames are in flight
 
         if (len > 0 && usbPort == TCM_COM) {

@@ -6,10 +6,10 @@ computes temperature, accelerometer, magnetometer, and roll/pitch/yaw, and strea
 
 ## Hardware variants
 
-| Name          | Chip         | Flash | PSRAM | Notes                        |
-|---------------|--------------|-------|-------|------------------------------|
-| Lonely Binary | ESP32-S3 QFN56 r0.2 | 16MB | 8MB (AP_3v3) | No SPIRAM in config |
-| Tiny          | ESP32-S3 QFN56 r0.2 | 4MB  | 2MB (AP_3v3) | SPIRAM quad mode, 40MHz      |
+| Name          | Chip                | Flash | PSRAM        | Notes                        |
+|---------------|---------------------|-------|--------------|------------------------------|
+| Lonely Binary | ESP32-S3 QFN56 r0.2 | 16MB  | 8MB (AP_3v3) | No SPIRAM in config          |
+| Tiny          | ESP32-S3 QFN56 r0.2 | 4MB   | 2MB (AP_3v3) | SPIRAM quad mode, 40MHz      |
 
 ## Features
 - USB Host CDC connection to a TCM device (myUsb.c)
@@ -51,8 +51,9 @@ Commands must be short (≤ 4 bytes). Binary frame data is automatically ignored
 | `[0`–`[9` | Select dataset 0–9            |
 | `[10`–`[11` | Select dataset 10–11        |
 
+Average mode only averages datasets 1-5.
 Average mode averages 20 samples before calculating values.
-As a result, average mode only sends data every 20 seconds.
+As a result, average mode only sends data every 20 iterations.
 
 ## Dataset reference
 
@@ -108,6 +109,13 @@ while True:
 - TCM init failure: LED 0 flashes red
 
 Note: setPixelColor calls led_strip_refresh per pixel — not optimal for large strips.
+
+## Timing
+
+- Main Loop runs 1hz if in loopBack/debug mode
+- When Main Loop is running TCM, loop rate is driven by TCM interaction time (it runs as fast as the TCM will respond)
+- Average mode uses 20 samples (will run 20 times slower)
+- Note: a "run" ends with outputting the data on RS485 
 
 ## Build & flash
 
