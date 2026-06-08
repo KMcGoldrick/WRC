@@ -12,6 +12,12 @@
 // Non-volatile Storage
 #define NVS_LOG_SIZE 1024
 
+// Check for stuck sensor values
+#define OK 0
+#define NORaw 1
+#define RAWStuck 2
+#define RAW_STUCK_THRESHOLD 5
+
 // Timing
 #define LED_TIME_MS 1000
 #define STARTUP_DELAY_MS 1000 

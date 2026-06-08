@@ -39,3 +39,5 @@ int rs485_available();
 int read_rs485_bytes(uint8_t* buffer, int max_len, int timeout_ms);
 int read_rs485_line(char* buffer, int max_len, int timeout_ms);
 void rs485_receive_task(void* arg);
+esp_err_t send_commandUsb(const char* cmd);
+

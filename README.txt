@@ -120,6 +120,7 @@ Note: setPixelColor calls led_strip_refresh per pixel — not optimal for large 
 ## Build & flash
 
 Use standard ESP-IDF commands from the project root:
+ESP-IDF 5.5 PowerShell
 - Configure:  idf.py menuconfig
 - Build:      idf.py build
 - Flash:      idf.py flash
@@ -168,3 +169,96 @@ PuTTY connection: COM3, baud per WRCDefs.h LOG_UART_BAUD. Use second red pot for
 - ESP-IDF documentation for USB Host / CDC, led_strip, and logging backends
 - Lowell Instruments TCM documentation for sensor commands and calibration format
 - WRCDefs.h for all compile-time hardware settings and pinouts
+
+### Main loop and initialization loops
+
+- Startup delay  
+  - Single `vTaskDelay(pdMS_TO_TICKS(5000))` at startup to allow flashing/debug attach and for the TCM to power up.
+
+- USB host / TCM init loops (blocking)  
+  - `initUsbHostMode()` waits for the USB host to become ready (internal poll loop with timeout).  
+  - `initTcm()` loops calling `connectDeviceUsb(...)` until the TCM is found or `TCM_CONNECT_TIMEOUT_MS` elapses; on failure the app enters a fatal error flash loop.
+
+- Main runtime loop (`while (1)` in `app_main`) — per iteration:
+  1. `runLED()` — update heartbeat / error LEDs (uses `millis()` / `esp_timer_get_time()` and refreshes pixels).  
+  2. Read RS‑485 control bytes with `read_rs485_bytes(...)` (blocking up to its timeout).  
+  3. Parse short commands that begin with `'['` and update runtime mode variables (`usbPort`, `four85Port`, `tcmDebug`, `tcmAverage`, `tcmDataSelect`, `tcmDataAsText`).  
+  4. Configure logging routing: call `redirect_esp_log()` when `four85Port == DEBUG` (routes `ESP_LOG*` to RS‑485); otherwise set log levels with `esp_log_level_set`.  
+  5. If `usbPort == TCM_COM` call `runTcm(...)`: read sensors via USB, optionally average, run computations (`calcTcm()`), and output via `tcmDataText()` or `tcmDataBinary()`. `runTcm()` returns a bool used to set `tcmProcessOk` (affects LEDs).  
+  6. Else (loopback/debug) echo or log received RS‑485 data and sleep with `vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_RATE_MS))`.
+
+- Important gotchas
+  - The main loop performs blocking I/O (`read_rs485_bytes`, `getSensorsRawUsb` with retries) so timing is synchronous — heavy TX/RX can delay processing. Consider a dedicated RS‑485 TX task/queue for high throughput.  
+  - When `usbPort == TCM_COM && four85Port == TCM_DATA` the code sets global logging to `ESP_LOG_NONE` to avoid contaminating RS‑485 output; `ESP_LOGE` messages are suppressed in that normal operational mode unless you enable `DEBUG` on the RS‑485 port.  
+  - `uart_log_vprintf()` + `send_rs485_text()` may produce `\r\r\n` line ends (remove one terminator to clean output).
+
+- Raw-value sanity check (recommended)  
+  - Call `checkRawValuesNotStuck()` immediately after `getSensorsRawUsb(&tcmInfo.raw, SENSOR_READINGS_CMD)` inside `runTcm()` and treat a `false` return as a read error (skip output, log, retry).
+
+- Quick improvement suggestions
+  - Batch LED updates and call `led_strip_refresh()` once per toggle.  
+  - Move RS‑485 TX to a dedicated task and use a queue to avoid blocking main logic.  
+  - Expose a non‑blocking or callback driven USB path if responsiveness is required.
+
+### Behavior of `while (tcmProcessOk)` inside the main loop
+
+- Purpose
+  - Runs the TCM processing continuously while the TCM subsystem is healthy; the loop keeps polling the TCM, performing calculations and streaming data over RS‑485.
+
+- Typical actions per iteration
+  - Update LED heartbeat (`runLED()`).
+  - Read short RS‑485 control bytes and apply commands (mode, dataset, averaging, text/binary selection).
+  - Call `runTcm(...)` which: reads raw sensors via USB (`getSensorsRawUsb`), optionally averages samples, runs `calcTcm()` computations, and outputs via `tcmDataText()` or `tcmDataBinary()`.
+  - Use `runTcm()` return value to decide health: a `false` return should set `tcmProcessOk = false` and exit the inner loop.
+
+- Timing
+  - Loop rate is governed by blocking USB I/O and TCM response time; when in debug/loopback mode `MAIN_LOOP_RATE_MS` controls the delay.
+
+- Error handling and recovery
+  - On read/processing failure `runTcm()` returns `false`; the app currently sets `tcmProcessOk` accordingly and the LED indicates error.
+  - Recommended improvements: add retry/backoff logic, an error counter, and an automatic reinitialization attempt (or escalate to a safe mode) rather than halting immediately.
+
+- Sanity checks
+  - Immediately after `getSensorsRawUsb(...)` call `checkRawValuesNotStuck()` to detect channels stuck at zero and treat failures as read errors.
+
+- Performance recommendations
+  - Move RS‑485 transmissions to a dedicated TX task with a queue to avoid blocking the TCM loop.
+  - Batch LED updates and call `led_strip_refresh()` once per toggle to reduce timing impact.
+
+- Summary
+  - The `while (tcmProcessOk)` pattern keeps sensor acquisition and output running while healthy; ensure robust error detection, non‑blocking I/O for TX, and clear recovery strategies to improve reliability.
+
+## Fallback and reinitialization strategy
+
+When the TCM subsystem fails (for example `runTcm()` returns `false` repeatedly or USB/TCM initialization fails), the firmware currently uses an infinite error-flash loop (`while (1)`) to indicate a fatal state. For production devices it’s better to implement a controlled fallback and reinitialization strategy to increase uptime and recover from transient faults.
+
+Recommended approach
+
+- Detect vs. escalate
+  - Treat a single `runTcm()` failure as transient: log it, increment a failure counter, and retry the read a few times before escalating.
+  - After a configurable number of consecutive failures (e.g., 3–5), transition to a reinitialization state rather than staying in the normal running loop.
+
+- Reinitialization sequence
+  1. Switch the LED to a distinct reinit pattern (e.g., slow amber blink) so status is visible.
+  2. Redirect logs to RS‑485 (or enable local logging) so reinit progress is observable: call `redirect_esp_log()` or `esp_log_level_set()` before reinit attempts.
+  3. Gracefully close/reset interfaces used by the TCM driver where applicable (close CDC handle, flush UART buffers, set RS‑485 DE low).
+  4. Attempt clean reinitialize of the USB host and TCM stack:
+     - Use `usb_host_uninstall()` / `usb_host_install()` or library-specific reset/close APIs if available.
+     - Re-run `initUsbHostMode()` and `initTcm()` with retries.
+  5. Use exponential backoff between attempts (500 ms → 1 s → 2 s → 4 s) and cap total retry time (e.g., 30–60 s).
+  6. If reinit succeeds, resume normal operation and clear failure counters. Optionally record recovery in NVS.
+
+- Final escalation
+  - If reinit repeatedly fails, choose one: call `esp_restart()` to reset the MCU; enter a low-power idle with occasional reinit attempts; or halt in an error loop for manual servicing.
+
+- Implementation notes
+  - Perform reinit in a separate FreeRTOS task or state machine so other subsystems (watchdog, RS‑485 parser, NVS logger) continue running.
+  - Clean up driver resources before reinstall; if cleanup isn’t possible, trigger a watchdog reset for a full platform restart.
+  - Keep logs enabled during reinit and remove extra CR/LF duplication for clean RS‑485 logs.
+  - Use unique LED patterns for transient error, reinit in progress, and fatal/unrecoverable states.
+
+- Observability
+  - Log reinit attempts and outcomes to NVS and emit structured messages over RS‑485 so field diagnostics are possible.
+
+Summary
+- Replace permanent `while (1)` error loops with a structured reinit strategy (retry, backoff, cleanup, escalate) to improve reliability and recoverability in the field.

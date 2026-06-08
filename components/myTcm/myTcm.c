@@ -22,6 +22,10 @@
 
 #define TAG "TCM"
 
+static rawSensors _prevRaw = { {0,0,0}, {0,0,0}, 0, 0 };
+static uint8_t _stuckCounters[8] = { 0 }; // acc.x,y,z; mag.x,y,z; temp; batt
+static bool _prevRawInitialized = false;
+
 // Global TCM info
 TcmInfo tcmInfo;
 TcmAverage tcmAvg;
@@ -300,6 +304,79 @@ void resetAverages(void) {
     if (tcmDebug) ESP_LOGI(TAG, "Averages reset");
 }
 
+void _update_prev_raw(const rawSensors* cur)
+{
+    _prevRaw = *cur;
+    for (int i = 0; i < 8; ++i) _stuckCounters[i] = 0;
+    _prevRawInitialized = true;
+}
+
+/*
+ * checkRawValuesNotStuck
+ * - returns true when raw sensor fields are not persistently stuck at zero
+ * - returns false if any raw channel has been zero for RAW_STUCK_THRESHOLD consecutive checks
+ */
+bool checkRawValuesNotStuck(void)
+{
+    const rawSensors cur = tcmInfo.raw;
+
+    if (!_prevRawInitialized) {
+        _update_prev_raw(&cur);
+        return true; // no history yet
+    }
+
+    // Map current and previous fields into a common int representation for checks
+    int32_t curVals[8] = {
+        cur.acc.x, cur.acc.y, cur.acc.z,
+        cur.mag.x, cur.mag.y, cur.mag.z,
+        (int32_t)cur.temp, (int32_t)cur.batt
+    };
+    int32_t prevVals[8] = {
+        _prevRaw.acc.x, _prevRaw.acc.y, _prevRaw.acc.z,
+        _prevRaw.mag.x, _prevRaw.mag.y, _prevRaw.mag.z,
+        (int32_t)_prevRaw.temp, (int32_t)_prevRaw.batt
+    };
+
+    bool anyStuck = false;
+
+    for (int i = 0; i < 8; ++i) {
+        if (curVals[i] == 0) {
+            if (curVals[i] == prevVals[i]) {
+                // zero persisted
+                if (_stuckCounters[i] < 255) _stuckCounters[i]++;
+            }
+            else {
+                // just became zero, start counter at 1
+                _stuckCounters[i] = 1;
+            }
+        }
+        else {
+            // non-zero observed -> reset counter
+            _stuckCounters[i] = 0;
+        }
+
+        if (_stuckCounters[i] >= RAW_STUCK_THRESHOLD) {
+            anyStuck = true;
+        }
+    }
+
+    // Save current as previous for next invocation
+    _prevRaw = cur;
+
+    if (anyStuck) {
+        ESP_LOGE(TAG, "Detected raw sensor channel stuck at 0 for >= %d checks", RAW_STUCK_THRESHOLD);
+        // Report which channels
+        const char* names[8] = { "acc.x", "acc.y", "acc.z", "mag.x", "mag.y", "mag.z", "temp", "batt" };
+        for (int i = 0; i < 8; ++i) {
+            if (_stuckCounters[i] >= RAW_STUCK_THRESHOLD) {
+                ESP_LOGE(TAG, "  Stuck channel: %s (value=0, count=%d)", names[i], _stuckCounters[i]);
+            }
+        }
+        return false;
+    }
+
+    return true;
+}
 // ------------------------------
 // TCM Algorithm
 // ------------------------------
@@ -774,19 +851,40 @@ bool initTcm(int level, bool debug, int select, bool asText) {
     return true;
 }
 
-void outputData()
+void outputData(int error)
 {
-    if (tcmDebug) 
+    if (tcmDebug)
     {
         dispTcm();
     }
     else
     {
-        if (tcmDataAsText) {
-            tcmDataText(dataSelect);
+        if (error == OK) {
+            if (tcmDataAsText) {
+                tcmDataText(dataSelect);
+            }
+            else {
+                tcmDataBinary(dataSelect);
+
+            }
         }
-        else {
-            tcmDataBinary(dataSelect);
+        else if (error == NORaw) {
+            if (tcmDataAsText) {
+                send_rs485_text("ERROR: No raw sensor data\n");
+            }
+            else {
+                uint8_t errFrame[3] = { 0xAA, 0xFF, 0x00 }; // SOF, error code, length=0
+                send_rs485_bytes(errFrame, sizeof(errFrame));
+            }
+        }
+        else if (error == RAWStuck) {
+            if (tcmDataAsText) {
+                send_rs485_text("ERROR: Raw sensor values stuck at zero\n");
+            }
+            else {
+                uint8_t errFrame[3] = { 0xAA, 0xFE, 0x00 }; // SOF, error code, length=0
+                send_rs485_bytes(errFrame, sizeof(errFrame));
+            }
 
         }
     }
@@ -802,9 +900,18 @@ bool runTcm(bool debug, bool average, bool dataAsText, int select)
     //      This will be handled by using a defaulut value 
     bool success = getSensorsRawUsb(&tcmInfo.raw, SENSOR_READINGS_CMD);
     if (!success) {
+        send_commandUsb(RESET_CMD);
         ESP_LOGE(TAG, "Failed to get raw sensor data");
+		outputData(NORaw);
         return false;
     }
+    success = true;//checkRawValuesNotStuck();
+    if (!success) {
+        send_commandUsb(RESET_CMD);
+        ESP_LOGE(TAG, "Aborting TCM calculation due to stuck raw sensor values");
+		outputData(RAWStuck);
+        return false;
+	}
     if (tcmAverage) 
     {
         addRawsToRawSum(); // Increments sampleCount
@@ -813,13 +920,13 @@ bool runTcm(bool debug, bool average, bool dataAsText, int select)
             calcAveragesAndCopyToRaw();
             resetAverages(); // Sets sampleCount to 0
             calcTcm();
-            outputData();
+            outputData(OK);
         }
     }
     else
     {
         calcTcm();
-        outputData();
+        outputData(OK);
     }
 	return true;
 }
