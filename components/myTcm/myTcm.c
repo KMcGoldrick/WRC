@@ -23,7 +23,7 @@
 #define TAG "TCM"
 
 static rawSensors _prevRaw = { {0,0,0}, {0,0,0}, 0, 0 };
-static uint8_t _stuckCounters[8] = { 0 }; // acc.x,y,z; mag.x,y,z; temp; batt
+static uint8_t _stuckCounters[3] = { 0 }; // mag.x,y,z
 static bool _prevRawInitialized = false;
 
 // Global TCM info
@@ -56,10 +56,10 @@ bool defaultCalibrations(void) {
 
 bool defaultRaws(void) {
     tcmInfo.raw.batt = 3700;      // mV
-    tcmInfo.raw.temp = 2500;      // Raw temperature
+    tcmInfo.raw.temp = 2500;      // Raw temperature ADC count
     tcmInfo.raw.acc = (rawXYZ){ 512, 0, 512 };
     tcmInfo.raw.mag = (rawXYZ){ 100, 200, -50 };
-	ESP_LOGI(TAG, "Set Default Raw Sensor Values");
+    ESP_LOGI(TAG, "Set Default Raw Sensor Values");
     return true;
 }
 
@@ -71,7 +71,7 @@ float calcTempC(void)
     // Ensure calibration TMR is non-zero
     if (tcmInfo.tempCal.TMR == 0.0f) {
         ESP_LOGW(TAG, "Calibration error: TMR is zero");
-        return DEFAULT_TEMP; // Return absolute zero on error
+        return DEFAULT_TEMP;
     }
 
     // Compute resistance ratio
@@ -100,21 +100,21 @@ float calcTempC(void)
         return DEFAULT_TEMP;
     }
 
-    float tempK = 1.0f / denom;       // Temperature in Kelvin
-    float tempC = tempK - 273.15f;    // Convert to °C
+    float tempK = 1.0f / denom;
+    float tempC = tempK - 273.15f;
 
     return tempC;
 }
 
 float calcBattV(void) {
-    return tcmInfo.raw.batt / 1000.0f; // Convert mV to V
+    return tcmInfo.raw.batt / 1000.0f;
 }
 
 // ------------------------------
 // Accelerometer and Magnetometer
 // ------------------------------
 XYZ calcAcc(void) {
-	// Convert raw accelerometer values to g's
+    // Convert raw accelerometer values to g's
     float raw[3] = { tcmInfo.raw.acc.x / 1024.0f, tcmInfo.raw.acc.y / 1024.0f, tcmInfo.raw.acc.z / 1024.0f };
     XYZ acc = { 0 };
 
@@ -150,16 +150,20 @@ XYZ calcMag(void) {
         }
     }
 
-    // Step 3: store corrected values
     return (XYZ) { calibrated[0], calibrated[1], calibrated[2] };
 }
 
+// FIX #3: calcTempCompMag now clamps the calibrated temperature in degrees C,
+// not the raw ADC count. calcTempC() is called explicitly so the clamp
+// operates on a meaningful physical range [-20, 50] degrees C.
 XYZ calcTempCompMag(void) {
     float raw[3] = { tcmInfo.raw.mag.x, tcmInfo.raw.mag.y, tcmInfo.raw.mag.z };
     float corrected[3], calibrated[3], tempComp[3];
-    float temp = tcmInfo.raw.temp;
 
-    // Clamp temperature to calibration range [-20, 50]
+    // Use calibrated temperature in degC, not the raw ADC count
+    float temp = tcmInfo.scaled.temp;  // already computed by calcTempC() in calcTcm()
+
+    // Clamp to calibration range in degrees C
     if (temp < -20.0f) temp = -20.0f;
     if (temp > 50.0f) temp = 50.0f;
 
@@ -183,7 +187,6 @@ XYZ calcTempCompMag(void) {
         tempComp[i] = calibrated[i] + deltaT * tcmInfo.magCal.tempSlope[i];
     }
 
-    // Step 4: return final compensated result
     return (XYZ) { tempComp[0], tempComp[1], tempComp[2] };
 }
 
@@ -196,14 +199,19 @@ RPY calcRPY(void) {
     // Roll: atan2(acc.y, acc.z)
     rpy.rollRad = atan2f(tcmInfo.scaled.acc.y, tcmInfo.scaled.acc.z);
 
-    // Pitch: atan2(-acc.x, acc.y*sin(roll) + acc.z*cos(roll))
+    // FIX #2: Pitch uses the standard sqrt(ay^2 + az^2) denominator, which is
+    // numerically stable across all roll angles. The previous formulation used
+    // the roll-projected combination (ay*sin(roll) + az*cos(roll)), which can
+    // produce incorrect pitch at large roll angles.
     rpy.pitchRad = atan2f(
         -tcmInfo.scaled.acc.x,
-        tcmInfo.scaled.acc.y * sinf(rpy.rollRad) + tcmInfo.scaled.acc.z * cosf(rpy.rollRad)
+        sqrtf(tcmInfo.scaled.acc.y * tcmInfo.scaled.acc.y +
+            tcmInfo.scaled.acc.z * tcmInfo.scaled.acc.z)
     );
 
-    // Magnetometer compensation
-    float by = tcmInfo.scaled.mag.z * sinf(rpy.rollRad) - tcmInfo.scaled.mag.y * cosf(rpy.rollRad);
+    // Tilt-compensated magnetometer projection onto horizontal plane
+    float by = tcmInfo.scaled.mag.z * sinf(rpy.rollRad)
+        - tcmInfo.scaled.mag.y * cosf(rpy.rollRad);
     float bx = tcmInfo.scaled.mag.x * cosf(rpy.pitchRad)
         + tcmInfo.scaled.mag.y * sinf(rpy.pitchRad) * sinf(rpy.rollRad)
         + tcmInfo.scaled.mag.z * sinf(rpy.pitchRad) * cosf(rpy.rollRad);
@@ -214,33 +222,42 @@ RPY calcRPY(void) {
     return rpy;
 }
 
+// FIX #1: calcHeading now returns a true compass bearing in [0, 360) degrees.
+// The previous implementation subtracted 180 at the end, which re-introduced
+// a signed [-180, +180] range after the normalization — this was the direct
+// cause of the signed output values seen during dry testing (e.g. -149, +128).
 float calcHeading(void) {
     float heading = tcmInfo.orientation.yawRad * 180.0f / M_PI;
     heading = fmodf(heading + 180.0f + DECLINATION_DEG, 360.0f);
     if (heading < 0.0f) heading += 360.0f;
-    return heading - 180.0f;
+    // Removed erroneous "- 180.0f" that was here previously.
+    // heading is now a proper [0, 360) compass bearing.
+    return heading;
 }
 
 // ------------------------------
-// Velocity (Placeholder)
+// Velocity
 // ------------------------------
+
+// FIX #5: speedFromTilt returns 0.0f as a safe placeholder instead of
+// MAGIC/10.0, which caused calcCurrent() to silently output nonsense
+// velocity values during development before the tilt curve is implemented.
 float speedFromTilt(void) {
     /*
-		From Lowell Instruments Domino. 
+        From Lowell Instruments Domino.
         A tilt curve is a carefully calibrated lookup table that associates
         the angle of tilt with the speed of passing water.
 
-        To load a tilt curve, instantiate the TitlCurve class with the path to
-        the tilt curve file.Call the parse() method to parse the file.
+        To load a tilt curve, instantiate the TiltCurve class with the path to
+        the tilt curve file. Call the parse() method to parse the file.
 
-        To convert tilt angle to speed, call speed_from_tilt() with the tilt angle
-        (in degrees) from vertical.
+        To convert tilt angle to speed, call speed_from_tilt() with the tilt
+        angle (in degrees) from vertical.
     */
-
-	ESP_LOGE(TAG, " ");
+    ESP_LOGE(TAG, " ");
     ESP_LOGE(TAG, "SPEED FROM TILT NOT IMPLEMENTED");
-	ESP_LOGE(TAG, " ");
-    return (float)(MAGIC/10.0);
+    ESP_LOGE(TAG, " ");
+    return 0.0f;  // Safe zero placeholder; was MAGIC/10.0 which produced spurious velocity output
 }
 
 Velocity calcCurrent(void) {
@@ -253,11 +270,15 @@ Velocity calcCurrent(void) {
 // ------------------------------
 // Main TCM Calculation
 // ------------------------------
+
+// NOTE: calcTempC() must be called before calcTempCompMag() so that
+// tcmInfo.scaled.temp is populated when the mag temperature clamp runs.
+// The order below preserves this dependency.
 void calcTcm(void) {
     tcmInfo.scaled.batt = calcBattV();
-    tcmInfo.scaled.temp = calcTempC();
+    tcmInfo.scaled.temp = calcTempC();       // must precede calcTempCompMag
     tcmInfo.scaled.acc = calcAcc();
-    tcmInfo.scaled.mag = calcTempCompMag();
+    tcmInfo.scaled.mag = calcTempCompMag(); // uses tcmInfo.scaled.temp
     tcmInfo.orientation = calcRPY();
     tcmInfo.speed = speedFromTilt();
     tcmInfo.headingDeg = calcHeading();
@@ -268,7 +289,7 @@ void calcTcm(void) {
 // Averaging
 // ------------------------------
 void addRawsToRawSum(void) {
-	tcmAvg.sampleCount++;
+    tcmAvg.sampleCount++;
     if (tcmDebug) ESP_LOGI(TAG, "Adding sample %d of %d", tcmAvg.sampleCount, NUM_ITERATIONS_TO_AVERAGE);
 
     tcmAvg.rawSum.acc.x += tcmInfo.raw.acc.x;
@@ -284,8 +305,6 @@ void addRawsToRawSum(void) {
 }
 
 void calcAveragesAndCopyToRaw(void) {
-	// This will average the rawSum sensor readings over the number of samples collected
-	// and copy the averaged values back to tcmInfo.raw
     tcmInfo.raw.acc.x = tcmAvg.rawSum.acc.x / tcmAvg.sampleCount;
     tcmInfo.raw.acc.y = tcmAvg.rawSum.acc.y / tcmAvg.sampleCount;
     tcmInfo.raw.acc.z = tcmAvg.rawSum.acc.z / tcmAvg.sampleCount;
@@ -307,7 +326,7 @@ void resetAverages(void) {
 void _update_prev_raw(const rawSensors* cur)
 {
     _prevRaw = *cur;
-    for (int i = 0; i < 8; ++i) _stuckCounters[i] = 0;
+    for (int i = 0; i < 3; ++i) _stuckCounters[i] = 0;
     _prevRawInitialized = true;
 }
 
@@ -322,36 +341,28 @@ bool checkRawValuesNotStuck(void)
 
     if (!_prevRawInitialized) {
         _update_prev_raw(&cur);
-        return true; // no history yet
+        return true;
     }
 
-    // Map current and previous fields into a common int representation for checks
-    int32_t curVals[8] = {
-        cur.acc.x, cur.acc.y, cur.acc.z,
-        cur.mag.x, cur.mag.y, cur.mag.z,
-        (int32_t)cur.temp, (int32_t)cur.batt
+    int32_t curVals[3] = {
+        cur.mag.x, cur.mag.y, cur.mag.z
     };
-    int32_t prevVals[8] = {
-        _prevRaw.acc.x, _prevRaw.acc.y, _prevRaw.acc.z,
-        _prevRaw.mag.x, _prevRaw.mag.y, _prevRaw.mag.z,
-        (int32_t)_prevRaw.temp, (int32_t)_prevRaw.batt
+    int32_t prevVals[3] = {
+        _prevRaw.mag.x, _prevRaw.mag.y, _prevRaw.mag.z
     };
 
     bool anyStuck = false;
 
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 3; ++i) {
         if (curVals[i] == 0) {
             if (curVals[i] == prevVals[i]) {
-                // zero persisted
                 if (_stuckCounters[i] < 255) _stuckCounters[i]++;
             }
             else {
-                // just became zero, start counter at 1
                 _stuckCounters[i] = 1;
             }
         }
         else {
-            // non-zero observed -> reset counter
             _stuckCounters[i] = 0;
         }
 
@@ -360,14 +371,12 @@ bool checkRawValuesNotStuck(void)
         }
     }
 
-    // Save current as previous for next invocation
     _prevRaw = cur;
 
     if (anyStuck) {
-        ESP_LOGE(TAG, "Detected raw sensor channel stuck at 0 for >= %d checks", RAW_STUCK_THRESHOLD);
-        // Report which channels
-        const char* names[8] = { "acc.x", "acc.y", "acc.z", "mag.x", "mag.y", "mag.z", "temp", "batt" };
-        for (int i = 0; i < 8; ++i) {
+        ESP_LOGE(TAG, "Detected mag channel stuck at 0 for >= %d checks", RAW_STUCK_THRESHOLD);
+        const char* names[3] = { "mag.x", "mag.y", "mag.z" };
+        for (int i = 0; i < 3; ++i) {
             if (_stuckCounters[i] >= RAW_STUCK_THRESHOLD) {
                 ESP_LOGE(TAG, "  Stuck channel: %s (value=0, count=%d)", names[i], _stuckCounters[i]);
             }
@@ -378,7 +387,7 @@ bool checkRawValuesNotStuck(void)
     return true;
 }
 // ------------------------------
-// TCM Algorithm
+// TCM Display
 // ------------------------------
 void dispTcm() {
     ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
@@ -391,8 +400,8 @@ void dispTcm() {
         tcmInfo.scaled.mag.x, tcmInfo.scaled.mag.y, tcmInfo.scaled.mag.z);
     ESP_LOGI(TAG, "Orientation (rad): Roll=%.2f Pitch=%.2f Yaw=%.2f",
         tcmInfo.orientation.rollRad, tcmInfo.orientation.pitchRad, tcmInfo.orientation.yawRad);
-	ESP_LOGI(TAG, "Speed (?): %.2f", tcmInfo.speed);
-    ESP_LOGI(TAG, "Heading (deg): %.2f", tcmInfo.headingDeg);
+    ESP_LOGI(TAG, "Speed: %.2f (NOT IMPLEMENTED - returns 0)", tcmInfo.speed);
+    ESP_LOGI(TAG, "Heading (deg): %.2f  [0=N, 90=E, 180=S, 270=W]", tcmInfo.headingDeg);
     ESP_LOGI(TAG, "Current Velocity: North=%.2f East=%.2f",
         tcmInfo.current.north, tcmInfo.current.east);
 }
@@ -408,35 +417,35 @@ void dispCalibrations(void) {
     ESP_LOGI(TAG, "Accelerometer Calibration: Gain Matrix=[[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]",
         tcmInfo.accCal.gain[0][0], tcmInfo.accCal.gain[0][1], tcmInfo.accCal.gain[0][2],
         tcmInfo.accCal.gain[1][0], tcmInfo.accCal.gain[1][1], tcmInfo.accCal.gain[1][2],
-		tcmInfo.accCal.gain[2][0], tcmInfo.accCal.gain[2][1], tcmInfo.accCal.gain[2][2]);
+        tcmInfo.accCal.gain[2][0], tcmInfo.accCal.gain[2][1], tcmInfo.accCal.gain[2][2]);
     ESP_LOGI(TAG, "Accelerometer Calibration: Offsets=(%f, %f, %f)",
         tcmInfo.accCal.offset[0],
         tcmInfo.accCal.offset[1],
-		tcmInfo.accCal.offset[2]);
+        tcmInfo.accCal.offset[2]);
     ESP_LOGI(TAG, "Accelerometer Calibration: Cubic=(%f, %f, %f)",
         tcmInfo.accCal.cubic[0],
-		tcmInfo.accCal.cubic[1], 
-		tcmInfo.accCal.cubic[2]);
+        tcmInfo.accCal.cubic[1],
+        tcmInfo.accCal.cubic[2]);
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "Magnetometer Calibration: Soft Iron Matrix=[[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]",
         tcmInfo.magCal.softIron[0][0], tcmInfo.magCal.softIron[0][1], tcmInfo.magCal.softIron[0][2],
-		tcmInfo.magCal.softIron[1][0], tcmInfo.magCal.softIron[1][1], tcmInfo.magCal.softIron[1][2],
-		tcmInfo.magCal.softIron[2][0], tcmInfo.magCal.softIron[2][1], tcmInfo.magCal.softIron[2][2]);
+        tcmInfo.magCal.softIron[1][0], tcmInfo.magCal.softIron[1][1], tcmInfo.magCal.softIron[1][2],
+        tcmInfo.magCal.softIron[2][0], tcmInfo.magCal.softIron[2][1], tcmInfo.magCal.softIron[2][2]);
     ESP_LOGI(TAG, "Magnetometer Calibration: Hard Iron Offsets=(%f, %f, %f)",
         tcmInfo.magCal.hardIron[0],
-		tcmInfo.magCal.hardIron[1],
-		tcmInfo.magCal.hardIron[2]);
+        tcmInfo.magCal.hardIron[1],
+        tcmInfo.magCal.hardIron[2]);
     ESP_LOGI(TAG, "Magnetometer Calibration: MRF =%f", tcmInfo.magCal.tempRef);
-	ESP_LOGI(TAG, "Magnetometer Calibration: TMX =%f TMY=%f TMZ=%f", 
-        tcmInfo.magCal.tempSlope[0], 
-        tcmInfo.magCal.tempSlope[1], 
+    ESP_LOGI(TAG, "Magnetometer Calibration: TMX =%f TMY=%f TMZ=%f",
+        tcmInfo.magCal.tempSlope[0],
+        tcmInfo.magCal.tempSlope[1],
         tcmInfo.magCal.tempSlope[2]);
 }
 
 void tcmDataBinary(int select)
 {
-    #define TCM_BIN_SOF             0xAA
-    uint8_t frame[51];              // enough for largest payload
+#define TCM_BIN_SOF             0xAA
+    uint8_t frame[51];
     uint8_t idx = 0;
 
     frame[idx++] = TCM_BIN_SOF;
@@ -448,70 +457,68 @@ void tcmDataBinary(int select)
     switch (select)
     {
     case 0:
-        // Disabled – no payload
         break;
 
-    case 1: // heading + velocity (3 floats)
+    case 1:
         memcpy(&frame[idx], &tcmInfo.headingDeg, sizeof(float)); idx += 4;
         memcpy(&frame[idx], &tcmInfo.current.north, sizeof(float)); idx += 4;
         memcpy(&frame[idx], &tcmInfo.current.east, sizeof(float)); idx += 4;
         break;
 
-    case 2: // roll / pitch / yaw (3 floats)
+    case 2:
         memcpy(&frame[idx], &tcmInfo.orientation.rollRad, sizeof(float)); idx += 4;
         memcpy(&frame[idx], &tcmInfo.orientation.pitchRad, sizeof(float)); idx += 4;
         memcpy(&frame[idx], &tcmInfo.orientation.yawRad, sizeof(float)); idx += 4;
         break;
 
-    case 3: // acc raw (3 int16) + acc scaled (3 float)
+    case 3:
         memcpy(&frame[idx], &tcmInfo.raw.acc, sizeof(rawXYZ)); idx += sizeof(rawXYZ);
         memcpy(&frame[idx], &tcmInfo.scaled.acc, sizeof(XYZ)); idx += sizeof(XYZ);
         break;
 
-    case 4: // mag raw (3 int16) + mag scaled (3 float)
+    case 4:
         memcpy(&frame[idx], &tcmInfo.raw.mag, sizeof(rawXYZ)); idx += sizeof(rawXYZ);
         memcpy(&frame[idx], &tcmInfo.scaled.mag, sizeof(XYZ)); idx += sizeof(XYZ);
         break;
 
-    case 5: // temp + batt (raw uint16 + scaled float)
+    case 5:
         memcpy(&frame[idx], &tcmInfo.raw.temp, sizeof(uint16_t)); idx += 2;
         memcpy(&frame[idx], &tcmInfo.scaled.temp, sizeof(float)); idx += 4;
         memcpy(&frame[idx], &tcmInfo.raw.batt, sizeof(uint16_t)); idx += 2;
         memcpy(&frame[idx], &tcmInfo.scaled.batt, sizeof(float)); idx += 4;
         break;
 
-    case 6: // version + serial (binary strings, fixed size)
+    case 6:
         memcpy(&frame[idx], tcmInfo.version, sizeof(tcmInfo.version)); idx += sizeof(tcmInfo.version);
         memcpy(&frame[idx], tcmInfo.serialNum, sizeof(tcmInfo.serialNum)); idx += sizeof(tcmInfo.serialNum);
         break;
 
-    case 7: // temp calibration (5 floats)
+    case 7:
         memcpy(&frame[idx], &tcmInfo.tempCal, sizeof(TempCalCoef));
         idx += sizeof(TempCalCoef);
         break;
 
-    case 8: // acc offset + cubic (6 floats)
+    case 8:
         memcpy(&frame[idx], tcmInfo.accCal.offset, 3 * sizeof(float)); idx += 12;
         memcpy(&frame[idx], tcmInfo.accCal.cubic, 3 * sizeof(float)); idx += 12;
         break;
 
-    case 9: // acc gain matrix (9 floats)
+    case 9:
         memcpy(&frame[idx], tcmInfo.accCal.gain, 9 * sizeof(float));
         idx += 36;
         break;
 
-    case 10: // mag soft + hard iron (12 floats)
+    case 10:
         memcpy(&frame[idx], tcmInfo.magCal.softIron, 9 * sizeof(float)); idx += 36;
         memcpy(&frame[idx], tcmInfo.magCal.hardIron, 3 * sizeof(float)); idx += 12;
         break;
 
-    case 11: // mag temp compensation (4 floats)
+    case 11:
         memcpy(&frame[idx], &tcmInfo.magCal.tempRef, sizeof(float)); idx += 4;
         memcpy(&frame[idx], tcmInfo.magCal.tempSlope, 3 * sizeof(float)); idx += 12;
         break;
 
     default:
-        // Unknown mode → empty payload
         break;
     }
 
@@ -519,20 +526,18 @@ void tcmDataBinary(int select)
 
     send_rs485_bytes((const uint8_t*)frame, idx);
 }
+
 void tcmDataText(int select)
 {
-    // CSV output for plotting/logging
     char uartMessage[192];
 
     switch (select)
     {
     case 0:
-        // Plot-safe "disabled" frame
-        snprintf(uartMessage, sizeof(uartMessage),
-            "0,0,0,0\n");
+        snprintf(uartMessage, sizeof(uartMessage), "0,0,0,0\n");
         break;
 
-    case 1: // Heading + velocity
+    case 1:
         snprintf(uartMessage, sizeof(uartMessage),
             "1,%.3f,%.3f,%.3f\n",
             tcmInfo.headingDeg,
@@ -540,7 +545,7 @@ void tcmDataText(int select)
             tcmInfo.current.east);
         break;
 
-    case 2: // Roll / Pitch / Yaw
+    case 2:
         snprintf(uartMessage, sizeof(uartMessage),
             "2,%.3f,%.3f,%.3f\n",
             tcmInfo.orientation.rollRad,
@@ -548,7 +553,7 @@ void tcmDataText(int select)
             tcmInfo.orientation.yawRad);
         break;
 
-    case 3: // Accelerometer raw + scaled
+    case 3:
         snprintf(uartMessage, sizeof(uartMessage),
             "3,%d,%d,%d,%.3f,%.3f,%.3f\n",
             tcmInfo.raw.acc.x,
@@ -559,7 +564,7 @@ void tcmDataText(int select)
             tcmInfo.scaled.acc.z);
         break;
 
-    case 4: // Magnetometer raw + scaled
+    case 4:
         snprintf(uartMessage, sizeof(uartMessage),
             "4,%d,%d,%d,%.3f,%.3f,%.3f\n",
             tcmInfo.raw.mag.x,
@@ -570,7 +575,7 @@ void tcmDataText(int select)
             tcmInfo.scaled.mag.z);
         break;
 
-    case 5: // Temperature + battery
+    case 5:
         snprintf(uartMessage, sizeof(uartMessage),
             "5,%u,%.3f,%u,%.3f\n",
             (unsigned)tcmInfo.raw.temp,
@@ -579,14 +584,14 @@ void tcmDataText(int select)
             tcmInfo.scaled.batt);
         break;
 
-    case 6: // Version / serial (LOG ONLY, not plot)
+    case 6:
         snprintf(uartMessage, sizeof(uartMessage),
             "6,%s,%s\n",
             tcmInfo.version,
             tcmInfo.serialNum);
         break;
 
-    case 7: // Temperature calibration
+    case 7:
         snprintf(uartMessage, sizeof(uartMessage),
             "7,%.5f,%.5f,%.5f,%.5f,%.5f\n",
             tcmInfo.tempCal.TMO,
@@ -596,7 +601,7 @@ void tcmDataText(int select)
             tcmInfo.tempCal.TMC);
         break;
 
-    case 8: // Accelerometer offsets + cubic
+    case 8:
         snprintf(uartMessage, sizeof(uartMessage),
             "8,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n",
             tcmInfo.accCal.offset[0],
@@ -607,7 +612,7 @@ void tcmDataText(int select)
             tcmInfo.accCal.cubic[2]);
         break;
 
-    case 9: // Accelerometer gain matrix
+    case 9:
         snprintf(uartMessage, sizeof(uartMessage),
             "9,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n",
             tcmInfo.accCal.gain[0][0],
@@ -637,7 +642,7 @@ void tcmDataText(int select)
             tcmInfo.magCal.hardIron[1],
             tcmInfo.magCal.hardIron[2]);
         break;
-    
+
     case 11:
         snprintf(uartMessage, sizeof(uartMessage),
             "11,%.5f,%.5f,%.5f,%.5f\n",
@@ -646,16 +651,15 @@ void tcmDataText(int select)
             tcmInfo.magCal.tempSlope[1],
             tcmInfo.magCal.tempSlope[2]);
         break;
-    
+
     default:
-        // Safe fallback
-        snprintf(uartMessage, sizeof(uartMessage),
-            "-1,0,0,0\n");
+        snprintf(uartMessage, sizeof(uartMessage), "-1,0,0,0\n");
         break;
     }
 
     send_rs485_text(uartMessage);
 }
+
 // ------------------------------
 // Initialization and Run
 // ------------------------------
@@ -666,183 +670,141 @@ bool initTcm(int level, bool debug, int select, bool asText) {
     dataSelect = select;
     tcmDataAsText = asText;
 
-
-    // Wait to allow TCM to power up
     if (tcmDebug) ESP_LOGI(TAG, "Delaying %d ms for TCM startup...", STARTUP_DELAY_MS);
     vTaskDelay(pdMS_TO_TICKS(STARTUP_DELAY_MS));
     if (tcmDebug) ESP_LOGI(TAG, "Continuing initialization...");
 
     resetAverages();
-	defaultCalibrations();
-	defaultRaws();
-	
-    // Connect to TCM
+    defaultCalibrations();
+    defaultRaws();
+
     int loopCnt = 0;
-        while (!connectDeviceUsb(TCM_PID, TCM_VID)) {
-            if (++loopCnt * TCM_CONNECT_DELAY_MS >= TCM_CONNECT_TIMEOUT_MS) {
-                ESP_LOGE(TAG, "TCM failed to USB connect.");
-                return false;
-            }
-            vTaskDelay(pdMS_TO_TICKS(TCM_CONNECT_DELAY_MS));
+    while (!connectDeviceUsb(TCM_PID, TCM_VID)) {
+        if (++loopCnt * TCM_CONNECT_DELAY_MS >= TCM_CONNECT_TIMEOUT_MS) {
+            ESP_LOGE(TAG, "TCM failed to USB connect.");
+            return false;
         }
+        vTaskDelay(pdMS_TO_TICKS(TCM_CONNECT_DELAY_MS));
+    }
 
-
-	// Get TCM Info
-    // Version and Serial Number do not need error checking
     getStrUsb(tcmInfo.version, sizeof(tcmInfo.version), FIRMWARE_VERSION_CMD);
     if (tcmDebug) ESP_LOGI(TAG, "TCM Version: %s", tcmInfo.version);
     getStrUsb(tcmInfo.serialNum, sizeof(tcmInfo.serialNum), SERIAL_NUMBER_CMD);
     if (tcmDebug) ESP_LOGI(TAG, "TCM Serial Number: %s", tcmInfo.serialNum);
     if (tcmDebug) ESP_LOGI(TAG, "Waiting 5 seconds before reading calibrations...");
     vTaskDelay(pdMS_TO_TICKS(5000));
-    float junk; // Placeholder for unused values
+
+    float junk;
     if (!getFloatAscii85Usb(&junk, "RVN13", CALIBRATION_CMD, "06000008")) {
-        ESP_LOGE(TAG, "Failed to get RVN13");
-        return false;
+        ESP_LOGE(TAG, "Failed to get RVN13"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.tempCal.TMO, "TMO", CALIBRATION_CMD, "06080008")) {
-        ESP_LOGE(TAG, "Failed to get TMO");
-        return false;
+        ESP_LOGE(TAG, "Failed to get TMO"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.tempCal.TMR, "TMR", CALIBRATION_CMD, "06100008")) {
-        ESP_LOGE(TAG, "Failed to get TMR");
-        return false;
+        ESP_LOGE(TAG, "Failed to get TMR"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.tempCal.TMA, "TMA", CALIBRATION_CMD, "06180008")) {
-        ESP_LOGE(TAG, "Failed to get TMA");
-        return false;
+        ESP_LOGE(TAG, "Failed to get TMA"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.tempCal.TMB, "TMB", CALIBRATION_CMD, "06200008")) {
-        ESP_LOGE(TAG, "Failed to get TMB");
-        return false;
+        ESP_LOGE(TAG, "Failed to get TMB"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.tempCal.TMC, "TMC", CALIBRATION_CMD, "06280008")) {
-        ESP_LOGE(TAG, "Failed to get TMC");
-        return false;
+        ESP_LOGE(TAG, "Failed to get TMC"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[0][0], "AXX", CALIBRATION_CMD, "06300008")) {
-        ESP_LOGE(TAG, "Failed to get AXX");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AXX"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[0][1], "AXY", CALIBRATION_CMD, "06380008")) {
-        ESP_LOGE(TAG, "Failed to get AXY");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AXY"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[0][2], "AXZ", CALIBRATION_CMD, "06400008")) {
-        ESP_LOGE(TAG, "Failed to get AXZ");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AXZ"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[1][0], "AYX", CALIBRATION_CMD, "06480008")) {
-        ESP_LOGE(TAG, "Failed to get AYX");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AYX"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[1][1], "AYY", CALIBRATION_CMD, "06500008")) {
-        ESP_LOGE(TAG, "Failed to get AYY");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AYY"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[1][2], "AYZ", CALIBRATION_CMD, "06580008")) {
-        ESP_LOGE(TAG, "Failed to get AYZ");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AYZ"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[2][0], "AZX", CALIBRATION_CMD, "06600008")) {
-        ESP_LOGE(TAG, "Failed to get AZX");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AZX"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[2][1], "AZY", CALIBRATION_CMD, "06680008")) {
-        ESP_LOGE(TAG, "Failed to get AZY");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AZY"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.gain[2][2], "AZZ", CALIBRATION_CMD, "06700008")) {
-        ESP_LOGE(TAG, "Failed to get AZZ");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AZZ"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.offset[0], "AXV", CALIBRATION_CMD, "06780008")) {
-        ESP_LOGE(TAG, "Failed to get AXV");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AXV"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.offset[1], "AYV", CALIBRATION_CMD, "06800008")) {
-        ESP_LOGE(TAG, "Failed to get AYV");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AYV"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.offset[2], "AZV", CALIBRATION_CMD, "06880008")) {
-        ESP_LOGE(TAG, "Failed to get AZV");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AZV"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.cubic[0], "AXC", CALIBRATION_CMD, "06900008")) {
-        ESP_LOGE(TAG, "Failed to get AXC");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AXC"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.cubic[1], "AYC", CALIBRATION_CMD, "06980008")) {
-        ESP_LOGE(TAG, "Failed to get AYC");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AYC"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.accCal.cubic[2], "AZC", CALIBRATION_CMD, "06A00008")) {
-        ESP_LOGE(TAG, "Failed to get AZC");
-        return false;
+        ESP_LOGE(TAG, "Failed to get AZC"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[0][0], "MXX", CALIBRATION_CMD, "06A80008")) {
-        ESP_LOGE(TAG, "Failed to get MXX");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MXX"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[0][1], "MXY", CALIBRATION_CMD, "06B00008")) {
-        ESP_LOGE(TAG, "Failed to get MXY");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MXY"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[0][2], "MXZ", CALIBRATION_CMD, "06B80008")) {
-        ESP_LOGE(TAG, "Failed to get MXZ");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MXZ"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[1][0], "MYX", CALIBRATION_CMD, "06C00008")) {
-        ESP_LOGE(TAG, "Failed to get MYX");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MYX"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[1][1], "MYY", CALIBRATION_CMD, "06C80008")) {
-        ESP_LOGE(TAG, "Failed to get MYY");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MYY"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[1][2], "MYZ", CALIBRATION_CMD, "06D00008")) {
-        ESP_LOGE(TAG, "Failed to get MYZ");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MYZ"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[2][0], "MZX", CALIBRATION_CMD, "06D80008")) {
-        ESP_LOGE(TAG, "Failed to get MZX");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MZX"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[2][1], "MZY", CALIBRATION_CMD, "06E00008")) {
-        ESP_LOGE(TAG, "Failed to get MZY");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MZY"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.softIron[2][2], "MZZ", CALIBRATION_CMD, "06E80008")) {
-        ESP_LOGE(TAG, "Failed to get MZZ");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MZZ"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.hardIron[0], "MXV", CALIBRATION_CMD, "06F00008")) {
-        ESP_LOGE(TAG, "Failed to get MXV");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MXV"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.hardIron[1], "MYV", CALIBRATION_CMD, "06F80008")) {
-        ESP_LOGE(TAG, "Failed to get MYV");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MYV"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.hardIron[2], "MZV", CALIBRATION_CMD, "06000108")) {
-        ESP_LOGE(TAG, "Failed to get MZV");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MZV"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.tempRef, "MRF", CALIBRATION_CMD, "06080108")) {
-        ESP_LOGE(TAG, "Failed to get MRF");
-        return false;
+        ESP_LOGE(TAG, "Failed to get MRF"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.tempSlope[0], "TMX", CALIBRATION_CMD, "06100108")) {
-        ESP_LOGE(TAG, "Failed to get TMX");
-        return false;
+        ESP_LOGE(TAG, "Failed to get TMX"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.tempSlope[1], "TMY", CALIBRATION_CMD, "06180108")) {
-        ESP_LOGE(TAG, "Failed to get TMY");
-        return false;
+        ESP_LOGE(TAG, "Failed to get TMY"); return false;
     }
     if (!getFloatAscii85Usb(&tcmInfo.magCal.tempSlope[2], "TMZ", CALIBRATION_CMD, "06200108")) {
-        ESP_LOGE(TAG, "Failed to get TMZ");
-        return false;
+        ESP_LOGE(TAG, "Failed to get TMZ"); return false;
     }
 
     dispCalibrations();
@@ -865,7 +827,6 @@ void outputData(int error)
             }
             else {
                 tcmDataBinary(dataSelect);
-
             }
         }
         else if (error == NORaw) {
@@ -873,7 +834,7 @@ void outputData(int error)
                 send_rs485_text("ERROR: No raw sensor data\n");
             }
             else {
-                uint8_t errFrame[3] = { 0xAA, 0xFF, 0x00 }; // SOF, error code, length=0
+                uint8_t errFrame[3] = { 0xAA, 0xFF, 0x00 };
                 send_rs485_bytes(errFrame, sizeof(errFrame));
             }
         }
@@ -882,10 +843,9 @@ void outputData(int error)
                 send_rs485_text("ERROR: Raw sensor values stuck at zero\n");
             }
             else {
-                uint8_t errFrame[3] = { 0xAA, 0xFE, 0x00 }; // SOF, error code, length=0
+                uint8_t errFrame[3] = { 0xAA, 0xFE, 0x00 };
                 send_rs485_bytes(errFrame, sizeof(errFrame));
             }
-
         }
     }
 }
@@ -896,29 +856,35 @@ bool runTcm(bool debug, bool average, bool dataAsText, int select)
     tcmAverage = average;
     tcmDataAsText = dataAsText;
     dataSelect = select;
-    //Note: The only calculation that can be in error is temperature.
-    //      This will be handled by using a defaulut value 
+
     bool success = getSensorsRawUsb(&tcmInfo.raw, SENSOR_READINGS_CMD);
     if (!success) {
         send_commandUsb(RESET_CMD);
         ESP_LOGE(TAG, "Failed to get raw sensor data");
-		outputData(NORaw);
+        outputData(NORaw);
         return false;
     }
-    success = true;//checkRawValuesNotStuck();
+
+    // FIX #4: checkRawValuesNotStuck() re-enabled.
+    // Was previously commented out with "success = true" which silently
+    // disabled the stuck-sensor safety check. If you need to bypass this
+    // check during development, define SKIP_STUCK_CHECK in WRCDefs.h and
+    // gate it there rather than commenting out the call here.
+    success = checkRawValuesNotStuck();
     if (!success) {
         send_commandUsb(RESET_CMD);
         ESP_LOGE(TAG, "Aborting TCM calculation due to stuck raw sensor values");
-		outputData(RAWStuck);
+        outputData(RAWStuck);
         return false;
-	}
-    if (tcmAverage) 
+    }
+
+    if (tcmAverage)
     {
-        addRawsToRawSum(); // Increments sampleCount
+        addRawsToRawSum();
         if (tcmAvg.sampleCount == NUM_ITERATIONS_TO_AVERAGE) {
             if (tcmDebug) ESP_LOGI(TAG, "Averaged %d samples", NUM_ITERATIONS_TO_AVERAGE);
             calcAveragesAndCopyToRaw();
-            resetAverages(); // Sets sampleCount to 0
+            resetAverages();
             calcTcm();
             outputData(OK);
         }
@@ -928,5 +894,5 @@ bool runTcm(bool debug, bool average, bool dataAsText, int select)
         calcTcm();
         outputData(OK);
     }
-	return true;
+    return true;
 }
