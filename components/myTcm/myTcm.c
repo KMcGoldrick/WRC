@@ -50,6 +50,10 @@ bool defaultCalibrations(void) {
         .softIron = { {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} },
         .hardIron = { 0.0f, 0.0f, 0.0f }
     };
+    tcmInfo.magCal.tempRef = 0.0f;
+    tcmInfo.magCal.tempSlope[0] = 0.0f;
+    tcmInfo.magCal.tempSlope[1] = 0.0f;
+    tcmInfo.magCal.tempSlope[2] = 0.0f;
     if (tcmDebug) ESP_LOGI(TAG, "Set Default Calibrations");
     return true;
 }
@@ -185,14 +189,13 @@ RPY calcRPY(void) {
     // Roll: atan2(acc.y, acc.z)
     rpy.rollRad = atan2f(tcmInfo.scaled.acc.y, tcmInfo.scaled.acc.z);
 
-    // FIX #2: Pitch uses the standard sqrt(ay^2 + az^2) denominator, which is
-    // numerically stable across all roll angles. The previous formulation used
-    // the roll-projected combination (ay*sin(roll) + az*cos(roll)), which can
-    // produce incorrect pitch at large roll angles.
+    // Pitch: roll-projected denominator matches Lowell Instruments reference implementation.
+    // ay*sin(roll) + az*cos(roll) is the geometrically correct gravity projection
+    // onto the roll-corrected forward axis.
     rpy.pitchRad = atan2f(
         -tcmInfo.scaled.acc.x,
-        sqrtf(tcmInfo.scaled.acc.y * tcmInfo.scaled.acc.y +
-            tcmInfo.scaled.acc.z * tcmInfo.scaled.acc.z)
+        tcmInfo.scaled.acc.y * sinf(rpy.rollRad) +
+        tcmInfo.scaled.acc.z * cosf(rpy.rollRad)
     );
 
     // Tilt-compensated magnetometer projection onto horizontal plane
@@ -207,22 +210,40 @@ RPY calcRPY(void) {
 
     return rpy;
 }
+float calcTilt(void) {
+    float ax = tcmInfo.scaled.acc.x;
+    float ay = tcmInfo.scaled.acc.y;
+    float az = tcmInfo.scaled.acc.z;
+
+    float mag = sqrtf(ax * ax + ay * ay + az * az);
+    if (mag == 0.0f) return 0.0f;
+
+    float tilt = acosf(az / mag);
+
+    // Fold upside-down deployments back into [0, 90°]
+    if (tilt > M_PI / 2.0f) tilt = M_PI - tilt;
+
+    return tilt;  // radians, [0, pi/2]
+}
 float speedFromTilt(void) {
-    /*
-        From Lowell Instruments Domino.
-        A tilt curve is a carefully calibrated lookup table that associates
-        the angle of tilt with the speed of passing water.
+    float tiltDeg = tcmInfo.tiltRad * 180.0f / M_PI;
 
-        To load a tilt curve, instantiate the TiltCurve class with the path to
-        the tilt curve file. Call the parse() method to parse the file.
+    // Clamp to table range
+    if (tiltDeg <= _tiltCurve[0].tiltDeg)
+        return _tiltCurve[0].speed;
+    if (tiltDeg >= _tiltCurve[_tiltCurveLen - 1].tiltDeg)
+        return _tiltCurve[_tiltCurveLen - 1].speed;
 
-        To convert tilt angle to speed, call speed_from_tilt() with the tilt
-        angle (in degrees) from vertical.
-    */
-    ESP_LOGE(TAG, " ");
-    ESP_LOGE(TAG, "SPEED FROM TILT NOT IMPLEMENTED");
-    ESP_LOGE(TAG, " ");
-    return 0.0f;  // Safe zero placeholder; was MAGIC/10.0 which produced spurious velocity output
+    // Find bracketing points and interpolate
+    for (int i = 0; i < _tiltCurveLen - 1; i++) {
+        if (tiltDeg >= _tiltCurve[i].tiltDeg && tiltDeg < _tiltCurve[i + 1].tiltDeg) {
+            float t = (tiltDeg - _tiltCurve[i].tiltDeg) /
+                (_tiltCurve[i + 1].tiltDeg - _tiltCurve[i].tiltDeg);
+            return _tiltCurve[i].speed + t * (_tiltCurve[i + 1].speed - _tiltCurve[i].speed);
+        }
+    }
+
+    return 0.0f; // unreachable if table is well-formed
 }
 float calcHeading(void) {
     float heading = tcmInfo.orientation.yawRad * 180.0f / M_PI;
@@ -239,19 +260,13 @@ Velocity calcCurrent(void) {
     return vel;
 }
 
-// ------------------------------
-// Main TCM Calculation
-// ------------------------------
-
-// NOTE: calcTempC() must be called before calcTempCompMag() so that
-// tcmInfo.scaled.temp is populated when the mag temperature clamp runs.
-// The order below preserves this dependency.
 void calcTcm(void) {
     tcmInfo.scaled.batt = calcBattV();
     tcmInfo.scaled.temp = calcTempC();       // must precede calcTempCompMag
     tcmInfo.scaled.acc = calcAcc();
     tcmInfo.scaled.mag = calcTempCompMag(); // uses tcmInfo.scaled.temp
     tcmInfo.orientation = calcRPY();
+	tcmInfo.tiltRad = calcTilt();
     tcmInfo.speed = speedFromTilt();
     tcmInfo.headingDeg = calcHeading();
     tcmInfo.current = calcCurrent();
@@ -372,7 +387,7 @@ void dispTcm() {
         tcmInfo.scaled.mag.x, tcmInfo.scaled.mag.y, tcmInfo.scaled.mag.z);
     ESP_LOGI(TAG, "Orientation (rad): Roll=%.2f Pitch=%.2f Yaw=%.2f",
         tcmInfo.orientation.rollRad, tcmInfo.orientation.pitchRad, tcmInfo.orientation.yawRad);
-    ESP_LOGI(TAG, "Speed: %.2f (NOT IMPLEMENTED - returns 0)", tcmInfo.speed);
+    ESP_LOGI(TAG, "Tilt (deg): %.2f  Speed: %.3f m/s", tcmInfo.tiltRad * 180.0f / M_PI, tcmInfo.speed);
     ESP_LOGI(TAG, "Heading (deg): %.2f  [0=N, 90=E, 180=S, 270=W]", tcmInfo.headingDeg);
     ESP_LOGI(TAG, "Current Velocity: North=%.2f East=%.2f",
         tcmInfo.current.north, tcmInfo.current.east);
@@ -488,6 +503,11 @@ void tcmDataBinary(int select)
     case 11:
         memcpy(&frame[idx], &tcmInfo.magCal.tempRef, sizeof(float)); idx += 4;
         memcpy(&frame[idx], tcmInfo.magCal.tempSlope, 3 * sizeof(float)); idx += 12;
+        break;
+
+    case 12:
+        memcpy(&frame[idx], &tcmInfo.tiltRad, sizeof(float)); idx += 4;
+        memcpy(&frame[idx], &tcmInfo.speed, sizeof(float)); idx += 4;
         break;
 
     default:
@@ -624,6 +644,13 @@ void tcmDataText(int select)
             tcmInfo.magCal.tempSlope[2]);
         break;
 
+    case 12:
+        snprintf(uartMessage, sizeof(uartMessage),
+            "12,%.5f,%.3f\n",
+            tcmInfo.tiltRad * 180.0f / M_PI,   // tilt in degrees
+            tcmInfo.speed);
+        break;
+    
     default:
         snprintf(uartMessage, sizeof(uartMessage), "-1,0,0,0\n");
         break;

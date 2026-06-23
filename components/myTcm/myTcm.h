@@ -73,7 +73,8 @@ typedef struct {
     CubicAccelerometer accCal; //8 9
     CubicMagnetometer magCal;  //10 11
     RPY orientation;           //2
-	float speed;               //Not Implemented
+    float tiltRad;             //12
+	float speed;               //12
     float headingDeg;          //1
     Velocity current;          //1
 } TcmInfo;
@@ -84,3 +85,25 @@ typedef struct {
 } TcmAverage;
 
 extern TcmInfo tcmInfo;
+
+typedef struct {
+    float tiltDeg;   // tilt angle from vertical (degrees)
+    float speed;     // corresponding water speed (m/s or cm/s — match your cal data)
+} TiltPoint;
+// Example calibration table — replace with real cal data from Lowell
+// Tilt angles must be ascending, range [0, 90]
+static const TiltPoint _tiltCurve[] = {
+    {  0.0f, 0.00f },
+    {  5.0f, 0.10f },
+    { 10.0f, 0.22f },
+    { 15.0f, 0.36f },
+    { 20.0f, 0.52f },
+    { 25.0f, 0.70f },
+    { 30.0f, 0.90f },
+    { 40.0f, 1.35f },
+    { 50.0f, 1.85f },
+    { 60.0f, 2.40f },
+    { 90.0f, 3.00f },
+};
+static const int _tiltCurveLen = sizeof(_tiltCurve) / sizeof(_tiltCurve[0]);
+
