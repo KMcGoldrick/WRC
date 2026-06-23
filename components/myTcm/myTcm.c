@@ -66,6 +66,9 @@ bool defaultRaws(void) {
 // ------------------------------
 // Temperature and Battery
 // ------------------------------
+float calcBattV(void) {
+    return tcmInfo.raw.batt / 1000.0f;
+}
 float calcTempC(void)
 {
     // Ensure calibration TMR is non-zero
@@ -105,14 +108,6 @@ float calcTempC(void)
 
     return tempC;
 }
-
-float calcBattV(void) {
-    return tcmInfo.raw.batt / 1000.0f;
-}
-
-// ------------------------------
-// Accelerometer and Magnetometer
-// ------------------------------
 XYZ calcAcc(void) {
     // Convert raw accelerometer values to g's
     float raw[3] = { tcmInfo.raw.acc.x / 1024.0f, tcmInfo.raw.acc.y / 1024.0f, tcmInfo.raw.acc.z / 1024.0f };
@@ -132,7 +127,6 @@ XYZ calcAcc(void) {
 
     return acc;
 }
-
 XYZ calcMag(void) {
     float raw[3] = { tcmInfo.raw.mag.x, tcmInfo.raw.mag.y, tcmInfo.raw.mag.z };
     float corrected[3], calibrated[3];
@@ -152,10 +146,6 @@ XYZ calcMag(void) {
 
     return (XYZ) { calibrated[0], calibrated[1], calibrated[2] };
 }
-
-// FIX #3: calcTempCompMag now clamps the calibrated temperature in degrees C,
-// not the raw ADC count. calcTempC() is called explicitly so the clamp
-// operates on a meaningful physical range [-20, 50] degrees C.
 XYZ calcTempCompMag(void) {
     float raw[3] = { tcmInfo.raw.mag.x, tcmInfo.raw.mag.y, tcmInfo.raw.mag.z };
     float corrected[3], calibrated[3], tempComp[3];
@@ -189,10 +179,6 @@ XYZ calcTempCompMag(void) {
 
     return (XYZ) { tempComp[0], tempComp[1], tempComp[2] };
 }
-
-// ------------------------------
-// Roll-Pitch-Yaw Calculation
-// ------------------------------
 RPY calcRPY(void) {
     RPY rpy;
 
@@ -221,27 +207,6 @@ RPY calcRPY(void) {
 
     return rpy;
 }
-
-// FIX #1: calcHeading now returns a true compass bearing in [0, 360) degrees.
-// The previous implementation subtracted 180 at the end, which re-introduced
-// a signed [-180, +180] range after the normalization — this was the direct
-// cause of the signed output values seen during dry testing (e.g. -149, +128).
-float calcHeading(void) {
-    float heading = tcmInfo.orientation.yawRad * 180.0f / M_PI;
-    heading = fmodf(heading + 180.0f + DECLINATION_DEG, 360.0f);
-    if (heading < 0.0f) heading += 360.0f;
-    // Removed erroneous "- 180.0f" that was here previously.
-    // heading is now a proper [0, 360) compass bearing.
-    return heading;
-}
-
-// ------------------------------
-// Velocity
-// ------------------------------
-
-// FIX #5: speedFromTilt returns 0.0f as a safe placeholder instead of
-// MAGIC/10.0, which caused calcCurrent() to silently output nonsense
-// velocity values during development before the tilt curve is implemented.
 float speedFromTilt(void) {
     /*
         From Lowell Instruments Domino.
@@ -259,7 +224,14 @@ float speedFromTilt(void) {
     ESP_LOGE(TAG, " ");
     return 0.0f;  // Safe zero placeholder; was MAGIC/10.0 which produced spurious velocity output
 }
-
+float calcHeading(void) {
+    float heading = tcmInfo.orientation.yawRad * 180.0f / M_PI;
+    heading = fmodf(heading + 180.0f + DECLINATION_DEG, 360.0f);
+    if (heading < 0.0f) heading += 360.0f;
+    // Removed erroneous "- 180.0f" that was here previously.
+    // heading is now a proper [0, 360) compass bearing.
+    return heading;
+}
 Velocity calcCurrent(void) {
     Velocity vel;
     vel.north = tcmInfo.speed * cosf(tcmInfo.headingDeg * M_PI / 180.0f);
